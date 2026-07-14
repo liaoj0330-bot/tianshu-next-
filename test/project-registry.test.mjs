@@ -8,6 +8,8 @@ import { assertPathAllowed, buildMinimalContext, registerProject } from "../src/
 import { assessProject } from "../src/context/active-assistant.mjs";
 import { loadProjectRegistry, saveProject } from "../src/context/project-store.mjs";
 import { claimJob, enqueueJob, finishJob, reconcileLeases, requestCancel, startJob } from "../src/runtime/governance.mjs";
+import { dispatchProbe } from "../src/agents/dispatcher.mjs";
+import { listAgents, registerAgent } from "../src/agents/registry.mjs";
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "tianshu-p3-"));
@@ -121,5 +123,17 @@ test("queues jobs, enforces project locks, retries failures, and recovers expire
     assert.deepEqual(reconcileLeases(db), []); // lease was released by finish path only after retry is claimed
     requestCancel(db, second);
     assert.equal(db.prepare("SELECT status FROM jobs WHERE job_id=?").get(second).status, "cancelled");
+  } finally { db.close(); }
+});
+
+test("registers and safely dispatches an agent probe with recorded output", async () => {
+  const f = fixture(); const db = openStore(join(f.root, "agents.sqlite"));
+  try {
+    registerAgent(db, { agent_id: "node-probe", display_name: "Node probe", command: process.execPath, args: [], capabilities: ["probe"], risk_level: "L0" });
+    assert.equal(listAgents(db).length, 1);
+    const result = await dispatchProbe(db, "node-probe");
+    assert.equal(result.status, "succeeded");
+    assert.match(result.stdout, /^v\d+/);
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM agent_runs").get().count, 1);
   } finally { db.close(); }
 });

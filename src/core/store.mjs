@@ -202,6 +202,29 @@ export function openStore(dbPath) {
       detail_json TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS agents (
+      agent_id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      command TEXT NOT NULL,
+      command_args_json TEXT NOT NULL,
+      capabilities_json TEXT NOT NULL,
+      risk_level TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      agent_run_id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL REFERENCES agents(agent_id),
+      job_id TEXT REFERENCES jobs(job_id),
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      exit_code INTEGER,
+      stdout TEXT,
+      stderr TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT
+    );
     CREATE TRIGGER IF NOT EXISTS goals_contract_immutable
     BEFORE UPDATE OF contract_json, contract_hash ON goals
     BEGIN
