@@ -6,6 +6,7 @@ function runCommand(command, args, timeoutMs = 15000) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { windowsHide: true, shell: false });
     let stdout = ""; let stderr = ""; let timedOut = false;
+    child.stdin.end();
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
     child.stdout.on("data", (data) => { stdout += data.toString(); });
     child.stderr.on("data", (data) => { stderr += data.toString(); });
@@ -31,7 +32,10 @@ export async function dispatchTextTask(db, agentId, prompt, { jobId = null, time
   const agent = getAgent(db, agentId); const runId = newId("agent_run"); const started = now();
   db.prepare("INSERT INTO agent_runs VALUES (?, ?, ?, 'text_task', 'running', NULL, '', '', ?, NULL)").run(runId, agentId, jobId, started);
   appendEvent(db, "agent_run", runId, "agent_run.started", { agent_id: agentId, mode: "text_task" });
-  const result = await runCommand(agent.command, [...agent.args, prompt], timeoutMs);
+  const args = agent.args.includes("__PROMPT__")
+    ? agent.args.map((arg) => arg === "__PROMPT__" ? prompt : arg.replaceAll("__PROMPT__", prompt))
+    : [...agent.args, prompt];
+  const result = await runCommand(agent.command, args, timeoutMs);
   const status = result.exitCode === 0 && !result.timedOut ? "succeeded" : "failed";
   db.prepare("UPDATE agent_runs SET status=?,exit_code=?,stdout=?,stderr=?,finished_at=? WHERE agent_run_id=?")
     .run(status, result.exitCode, result.stdout, result.stderr, now(), runId);

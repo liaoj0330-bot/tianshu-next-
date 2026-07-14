@@ -3,6 +3,7 @@ node_modules/
 .executor-test-runtime/
 .test-runtime/
 .real-smoke/
+.codex-home/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal

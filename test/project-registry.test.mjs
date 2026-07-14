@@ -141,7 +141,7 @@ test("registers and safely dispatches an agent probe with recorded output", asyn
 test("dispatches a text task and records the returned result", async () => {
   const f = fixture(); const db = openStore(join(f.root, "text-agent.sqlite"));
   try {
-    registerAgent(db, { agent_id: "node-text", display_name: "Node text", command: process.execPath, args: ["-e", "console.log(process.argv[1])", "--"], capabilities: ["text_task"], risk_level: "L0" });
+    registerAgent(db, { agent_id: "node-text", display_name: "Node text", command: process.execPath, args: ["-e", "console.log(process.argv[1])", "--", "__PROMPT__"], capabilities: ["text_task"], risk_level: "L0" });
     const result = await dispatchTextTask(db, "node-text", "READY-TASK");
     assert.equal(result.status, "succeeded");
     assert.equal(result.stdout, "READY-TASK");
