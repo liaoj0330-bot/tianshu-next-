@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
+import { analyzeIntent } from "../intelligence/intent-router.mjs";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -39,6 +40,11 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
           },
           subjects: db.prepare("SELECT subject_id, display_name, current_snapshot_id, updated_at FROM state_subjects ORDER BY updated_at DESC").all(),
         });
+      }
+      if (req.method === "POST" && req.url === "/v1/analyze") {
+        const input = await body(req);
+        if (!input.text || typeof input.text !== "string") return json(res, 400, { error: "text is required" });
+        return json(res, 200, { analysis: analyzeIntent(input.text), routed_to: "goal_manager" });
       }
       if (req.method === "GET" && (req.url === "/" || req.url === "/dashboard")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
