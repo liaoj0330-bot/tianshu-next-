@@ -232,6 +232,18 @@ export function openStore(dbPath) {
       status TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS memory_candidates (
+      candidate_id TEXT PRIMARY KEY,
+      subject_id TEXT NOT NULL,
+      statement TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      occurrence_count INTEGER NOT NULL DEFAULT 1,
+      counterexamples_json TEXT NOT NULL,
+      source_ids_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('candidate','promoted','rejected')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE TRIGGER IF NOT EXISTS goals_contract_immutable
     BEFORE UPDATE OF contract_json, contract_hash ON goals
     BEGIN
