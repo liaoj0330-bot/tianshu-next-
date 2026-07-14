@@ -3,6 +3,7 @@ import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
 import { analyzeIntent } from "../intelligence/intent-router.mjs";
 import { classifyOperatingDomain } from "../intelligence/domain-router.mjs";
 import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
+import { createGoal } from "../core/kernel.mjs";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -52,6 +53,23 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
       if (req.method === "POST" && req.url === "/v1/state/subjects") {
         const input = await body(req);
         return json(res, 201, createStateSubject(db, input));
+      }
+      if (req.method === "POST" && req.url === "/v1/goals") {
+        const input = await body(req);
+        if (!input.original_request || typeof input.original_request !== "string") return json(res, 400, { error: "original_request is required" });
+        const analysis = analyzeIntent(input.original_request);
+        const contract = {
+          original_request: input.original_request,
+          real_goal: input.real_goal ?? input.original_request,
+          success_criteria: input.success_criteria ?? [],
+          non_goals: input.non_goals ?? [],
+          constraints: input.constraints ?? [],
+          required_evidence: input.required_evidence ?? [],
+          risk_level: input.risk_level ?? "L1",
+          operating_domain: classifyOperatingDomain(analysis),
+          source: input.source ?? "gateway",
+        };
+        return json(res, 201, { ...createGoal(db, contract), analysis });
       }
       const stateMatch = req.url.match(/^\/v1\/state\/([^/]+)(?:\/([^/]+))?$/);
       if (stateMatch && req.method === "GET") {
