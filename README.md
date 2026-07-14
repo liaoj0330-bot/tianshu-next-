@@ -74,6 +74,8 @@ npm run service
 
 - [产品路线基线](docs/TIANSHU_PRODUCT_ROADMAP_003.md)
 - [产品闭环与 P5 当前状态](docs/TIANSHU_PRODUCT_LOOP_P5_STATUS_002.md)
+- [天枢系统可视化结构图](docs/TIANSHU_SYSTEM_VISUAL_MAP_001.md)
+- [Obsidian 可视化回写证据](docs/TIANSHU_OBSIDIAN_VISUAL_WRITEBACK_002.md)
 - [P5 生命周期证据](docs/TIANSHU_P5_LIFECYCLE_EVIDENCE_002.md)
 - [P5 加固证据](docs/TIANSHU_P5_HARDENING_EVIDENCE_003.md)
 - [AgentHub 接入验收](docs/TIANSHU_GATEWAY_AGENTHUB_ACCEPTANCE_001.md)
