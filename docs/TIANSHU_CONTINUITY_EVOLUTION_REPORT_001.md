@@ -61,7 +61,9 @@ GET /v1/continuity/evolution-candidates?kind=content_idea
 ## 验收证据
 
 - 连续性定向测试：5/5 通过。
-- 完整测试：80/80 通过。
+- 本报告形成时的完整测试：80/80 通过。
+- 当前仓库基线（2026-07-15）：89/89 通过；最新汇总见
+  `docs/TIANSHU_CURRENT_PROGRESS_20260715.md`。
 - 覆盖关闭再打开 SQLite、Gateway 重启恢复、问题复发去重、Obsidian 生成、非法候选原子回滚。
 
 ## 尚未完成
