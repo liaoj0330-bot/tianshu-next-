@@ -86,6 +86,17 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
         appendEvent(db, "intake", intakeId, "intake.accepted", { source: input.source ?? "unknown" });
         return json(res, 202, { intake_id: intakeId, status: "accepted", routed_to: "tianshu-orchestrator", state_authority: "sqlite", next: "goal_manager", analysis });
       }
+      if (req.method === "POST" && req.url === "/v1/device/events") {
+        const input = await body(req);
+        if (!input.device_id || !input.event_type) return json(res, 400, { error: "device_id and event_type are required" });
+        const message = typeof input.payload?.text === "string" ? input.payload.text : `${input.event_type} from ${input.device_id}`;
+        const rawAnalysis = analyzeIntent(message);
+        const analysis = { ...rawAnalysis, operating_domain: classifyOperatingDomain(rawAnalysis) };
+        const eventId = newId("device_event");
+        db.prepare("INSERT INTO intake_events VALUES (?, ?, ?, 'accepted', ?)").run(eventId, `device:${input.device_id}`, canonicalJson({ device_id: input.device_id, event_type: input.event_type, payload: input.payload ?? {}, analysis }), input.observed_at ?? now());
+        appendEvent(db, "device_event", eventId, "device_event.accepted", { device_id: input.device_id, event_type: input.event_type });
+        return json(res, 202, { event_id: eventId, status: "accepted", routed_to: "tianshu-orchestrator", analysis });
+      }
       if (req.method === "GET" && req.url === "/v1/intakes") {
         return json(res, 200, { items: db.prepare("SELECT intake_id, source, status, created_at FROM intake_events ORDER BY created_at DESC").all() });
       }
