@@ -8,7 +8,7 @@ import { assertPathAllowed, buildMinimalContext, registerProject } from "../src/
 import { assessProject } from "../src/context/active-assistant.mjs";
 import { loadProjectRegistry, saveProject } from "../src/context/project-store.mjs";
 import { claimJob, enqueueJob, finishJob, reconcileLeases, requestCancel, startJob } from "../src/runtime/governance.mjs";
-import { dispatchProbe } from "../src/agents/dispatcher.mjs";
+import { dispatchProbe, dispatchTextTask } from "../src/agents/dispatcher.mjs";
 import { listAgents, registerAgent } from "../src/agents/registry.mjs";
 
 function fixture() {
@@ -135,5 +135,16 @@ test("registers and safely dispatches an agent probe with recorded output", asyn
     assert.equal(result.status, "succeeded");
     assert.match(result.stdout, /^v\d+/);
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM agent_runs").get().count, 1);
+  } finally { db.close(); }
+});
+
+test("dispatches a text task and records the returned result", async () => {
+  const f = fixture(); const db = openStore(join(f.root, "text-agent.sqlite"));
+  try {
+    registerAgent(db, { agent_id: "node-text", display_name: "Node text", command: process.execPath, args: ["-e", "console.log(process.argv[1])", "--"], capabilities: ["text_task"], risk_level: "L0" });
+    const result = await dispatchTextTask(db, "node-text", "READY-TASK");
+    assert.equal(result.status, "succeeded");
+    assert.equal(result.stdout, "READY-TASK");
+    assert.equal(db.prepare("SELECT mode FROM agent_runs ORDER BY started_at DESC LIMIT 1").get().mode, "text_task");
   } finally { db.close(); }
 });
