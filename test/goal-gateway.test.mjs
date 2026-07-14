@@ -12,7 +12,7 @@ test("gateway turns natural language into an immutable goal contract", async () 
   try {
     const response = await fetch(`http://${address.address}:${address.port}/v1/goals`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ original_request: "推进高校 AI 教育项目", success_criteria: ["形成下一步计划"] }) });
     const result = await response.json();
-    assert.equal(response.status, 201); assert.match(result.goal_id, /^goal_/); assert.equal(result.status, "proposed");
+    assert.equal(response.status, 201); assert.match(result.goal_id, /^goal_/); assert.equal(result.status, "contracted");
     assert.equal(result.contract.operating_domain, "work");
   } finally { await gateway.close(); db.close(); }
 });
