@@ -10,7 +10,7 @@ test("routes long-term creator, current project, and future system signals", () 
 });
 
 test("marks incomplete state for targeted follow-up", () => {
-  const result = analyzeIntent("最近项目变化很大，但我还不确定下一步怎么安排");
+  const result = analyzeIntent("最近项目变化很大，但我还不确定发生了什么");
   assert.equal(result.needs_questions, true);
   assert.equal(result.action_signal, false);
 });
