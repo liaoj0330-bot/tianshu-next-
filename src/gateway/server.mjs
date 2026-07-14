@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
 import { analyzeIntent } from "../intelligence/intent-router.mjs";
+import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -45,6 +46,29 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
         const input = await body(req);
         if (!input.text || typeof input.text !== "string") return json(res, 400, { error: "text is required" });
         return json(res, 200, { analysis: analyzeIntent(input.text), routed_to: "goal_manager" });
+      }
+      if (req.method === "POST" && req.url === "/v1/state/subjects") {
+        const input = await body(req);
+        return json(res, 201, createStateSubject(db, input));
+      }
+      const stateMatch = req.url.match(/^\/v1\/state\/([^/]+)(?:\/([^/]+))?$/);
+      if (stateMatch && req.method === "GET") {
+        const state = getCurrentState(db, stateMatch[1]);
+        if (!state) return json(res, 404, { error: "state subject not found" });
+        return json(res, 200, state);
+      }
+      if (stateMatch && stateMatch[2] === "propose" && req.method === "POST") {
+        const input = await body(req);
+        return json(res, 201, proposeStateUpdate(db, stateMatch[1], input));
+      }
+      if (stateMatch && stateMatch[2] === "decision" && req.method === "POST") {
+        const input = await body(req);
+        return json(res, 200, decideStateUpdate(db, input.cycle_id, input.decision, input));
+      }
+      if (stateMatch && stateMatch[2] === "card" && req.method === "GET") {
+        const cycleId = new URL(req.url, "http://localhost").searchParams.get("cycle_id");
+        if (!cycleId) return json(res, 400, { error: "cycle_id is required" });
+        return json(res, 200, buildStateDecisionCard(db, cycleId));
       }
       if (req.method === "GET" && (req.url === "/" || req.url === "/dashboard")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
