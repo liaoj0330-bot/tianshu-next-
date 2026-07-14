@@ -4,6 +4,7 @@ node_modules/
 .test-runtime/
 .real-smoke/
 .p5-runtime/
+.phase6-runtime/
 .codex-home/
 *.sqlite
 *.sqlite-shm
