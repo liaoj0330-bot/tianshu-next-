@@ -37,7 +37,7 @@ SQLite 仍是唯一机器状态源；本文只是可读证据。
 - 需要在当前加固协议下重新运行一次真实隔离代码任务，并产生 Executor Agent Run、确定性 Git/字节证据、另一 Agent 的结构化复核、Verification 和 Creator Decision 的完整 SQLite 链。
 - 需要长时间 Worker/重启恢复/子进程树回收的真实演练证据，而不只是自动测试。
 - 正式 Obsidian Vault 路径未在仓库或配置中登记，当前不能安全回写；禁止猜测路径。
-- GitHub 同步已尝试，但 `git push` 连接重置，随后 `git ls-remote` 无法连接 github.com:443；本地为 `main...origin/main [ahead 1]`，不得声明远端已同步。
+- GitHub 首次推送因连接重置失败；重试后已成功推送，并通过 `git ls-remote` 确认远端 `main` 与本地提交 OID 一致。
 
 ## 下一阶段门
 
