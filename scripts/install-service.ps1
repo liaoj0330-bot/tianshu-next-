@@ -11,6 +11,7 @@ if ($Uninstall) {
 $root = Split-Path -Parent $PSScriptRoot
 $node = (Get-Command node).Source
 $script = Join-Path $root "scripts/tianshu-service.mjs"
+$watchdog = Join-Path $root "scripts/tianshu-watchdog.ps1"
 try {
   $action = New-ScheduledTaskAction -Execute $node -Argument ('"' + $script + '"') -WorkingDirectory $root
   $trigger = New-ScheduledTaskTrigger -AtLogOn
@@ -18,7 +19,7 @@ try {
   Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Settings $settings -Description "TianShu local orchestrator" -Force -ErrorAction Stop | Out-Null
   [pscustomobject]@{ mode = "scheduled_task"; task = $task }
 } catch [Microsoft.Management.Infrastructure.CimException] {
-  $command = 'powershell.exe -NoProfile -WindowStyle Hidden -Command "& ''' + $node + ''' ''' + $script + '''"'
+  $command = 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $watchdog + '"'
   New-ItemProperty -Path $runKey -Name $runName -Value $command -PropertyType String -Force | Out-Null
   [pscustomobject]@{ mode = "current_user_run"; registry = $runKey; name = $runName }
 }

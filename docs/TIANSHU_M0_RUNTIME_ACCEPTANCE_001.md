@@ -58,3 +58,19 @@ M0 聚焦测试：6/6 通过。
 - 正式 Vault 路径仍未登记，因此 M0 不写 Vault。
 - 下一阶段严格进入 AgentHub Integration Spike；未通过 Spike 前不把 AgentHub 宣称为产品主入口。
 - Teacher PPT、069、070 与业务仓库未读取、未修改、未派发。
+## 2026-07-15 用户访问修复与自验收
+
+发现仅使用 HKCU Run 启动 Node 不能在进程意外退出后自动恢复。现已新增隐藏 watchdog，并把无管理员权限的登录启动项改为启动 watchdog。
+
+真实故障演练：
+
+- 强制终止旧服务 PID 30840；
+- watchdog 在数秒内恢复新服务 PID 24396；
+- worker.running = true；
+- 桌面创建“天枢总控”快捷入口；
+- Chrome 真实渲染页面并生成 48,595 字节截图；
+- 隔离访问输入返回 accepted；
+- SQLite Intake 精确增加 1 条；
+- state_authority = sqlite。
+
+因此“同机桌面可访问、服务故障自动恢复、页面到 SQLite 写入”用户侧闭环通过。该入口仍是 TianShu Next 开发版本机 Dashboard，不是 AgentHub，也不开放其他设备访问。
