@@ -269,6 +269,39 @@ export function openStore(dbPath) {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS creator_priority_one_current
       ON creator_priority_assessments(project_key) WHERE status IN ('candidate','confirmed');
+    CREATE TABLE IF NOT EXISTS project_change_candidates (
+      change_id TEXT PRIMARY KEY,
+      project_key TEXT NOT NULL REFERENCES creator_project_profiles(project_key),
+      change_type TEXT NOT NULL CHECK(change_type IN ('stage','progress','risk','deadline','priority','status','note')),
+      previous_json TEXT,
+      proposed_json TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      impact_json TEXT NOT NULL,
+      source_json TEXT NOT NULL,
+      evidence_json TEXT NOT NULL,
+      confidence TEXT NOT NULL CHECK(confidence IN ('high','medium','low')),
+      status TEXT NOT NULL CHECK(status IN ('awaiting_creator_confirmation','accepted','rejected','superseded')),
+      created_at TEXT NOT NULL,
+      decided_at TEXT,
+      decided_by TEXT,
+      decision_reason TEXT
+    );
+    CREATE INDEX IF NOT EXISTS project_change_candidates_project_time
+      ON project_change_candidates(project_key, created_at DESC);
+    CREATE TABLE IF NOT EXISTS project_current_state (
+      project_key TEXT NOT NULL REFERENCES creator_project_profiles(project_key),
+      state_key TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      source_change_id TEXT NOT NULL REFERENCES project_change_candidates(change_id),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(project_key, state_key)
+    );    CREATE TABLE IF NOT EXISTS project_observation_cursors (
+      project_key TEXT NOT NULL REFERENCES creator_project_profiles(project_key),
+      source_kind TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      PRIMARY KEY(project_key, source_kind)
+    );
     CREATE TABLE IF NOT EXISTS plan_candidates (
       candidate_id TEXT PRIMARY KEY,
       intake_id TEXT NOT NULL REFERENCES intake_events(intake_id),

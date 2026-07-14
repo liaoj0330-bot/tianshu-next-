@@ -1,18 +1,25 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { buildResumePacket } from "../continuity/continuity.mjs";
-
 const ensure = (path) => mkdirSync(dirname(path), { recursive: true });
-const list = (items, empty = "暂无") => items?.length ? items.map((item) => `- ${item}`).join("\n") : `- ${empty}`;
+const bullets = (items, empty = "暂无") => items?.length ? items.map((x) => "- " + x).join("\n") : "- " + empty;
 const safe = (value) => String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");
-
 export function writeContinuityMirrors(db, { resumePath, problemsPath, contentPath, scope = "tianshu" }) {
-  const packet = buildResumePacket(db, scope); const stamp = new Date().toISOString();
-  const checkpoint = packet.checkpoint;
-  const resume = `---\ntitle: 天枢继续执行包\ntype: sqlite-read-model\nupdated: ${stamp}\nstate_authority: sqlite\n---\n\n# 天枢继续执行包\n\n> [!important] 恢复指令\n> ${packet.resume_instruction}\n\n## 当前目标\n\n${checkpoint ? `**${checkpoint.objective}**\n\n- 阶段：${checkpoint.phase}\n- 验收状态：${checkpoint.snapshot.acceptance_state}\n- 检查点：${checkpoint.checkpoint_id}\n- 生成时间：${checkpoint.created_at}` : "尚未建立检查点。"}\n\n## 已完成\n\n${list(checkpoint?.snapshot.completed)}\n\n## 正在推进\n\n${list(checkpoint?.snapshot.in_progress)}\n\n## 当前卡点\n\n${list(checkpoint?.snapshot.blockers)}\n\n## 唯一下一步\n\n> ${checkpoint?.snapshot.next_action ?? "先建立正式检查点"}\n\n## 恢复前检查\n\n- [ ] 核对 SQLite 正式状态\n- [ ] 核对 Git 本地与远端哈希\n- [ ] 核对服务健康状态\n- [ ] 核对未解决问题与待确认事项\n- [ ] 不重新规划已经完成的工作\n- [ ] 不访问受保护项目\n\n## 连续性逻辑\n\n\`\`\`mermaid\nflowchart LR\n    CLOSE[任务收尾] --> DB[(SQLite 检查点)]\n    DB --> API[Resume API]\n    API --> VERIFY[核对 Git / 服务 / 卡点]\n    VERIFY --> NEXT[从唯一下一步继续]\n    NEXT --> CLOSE\n\`\`\`\n\n> 本页由 SQLite 生成，不能反向控制任务。\n`;
-  const problems = `---\ntitle: 天枢问题与卡点地图\ntype: sqlite-read-model\nupdated: ${stamp}\nstate_authority: sqlite\n---\n\n# 天枢问题与卡点地图\n\n| 问题 | 症状 | 状态 | 复发次数 | 下次先做什么 |\n| --- | --- | --- | ---: | --- |\n${packet.unresolved_problems.map((item) => `| ${safe(item.title)} | ${safe(item.symptom)} | ${item.status} | ${item.occurrence_count} | ${safe(item.recurrence_playbook)} |`).join("\n") || "| 暂无未解决问题 | - | - | 0 | - |"}\n\n## 处理逻辑\n\n\`\`\`mermaid\nflowchart TD\n    S[发现相似症状] --> F[按 fingerprint 查历史问题]\n    F --> R[先执行复发处理手册]\n    R --> V[运行原验证方法]\n    V --> D{证据通过?}\n    D -->|否| O[保持 open / monitoring]\n    D -->|是| C[标记 resolved]\n    O --> U[更新根因与新证据]\n\`\`\`\n\n> 问题被解决不代表删除历史；下次复发必须累计并重新验证。\n`;
-  const ideas = packet.evolution_candidates.filter((item) => item.kind === "content_idea");
-  const content = `---\ntitle: 天枢自媒体内容候选池\ntype: sqlite-read-model\nupdated: ${stamp}\nstate_authority: sqlite\n---\n\n# 天枢自媒体内容候选池\n\n> [!note] 生成原则\n> 从真实项目、真实问题和真实修复中提炼；候选不等于已经批准发布。\n\n${ideas.map((item) => `## ${item.title}\n\n- 状态：${item.status}\n- 来源：${safe(item.payload.source_problem ?? item.source.reference ?? "任务复盘")}\n- 适合形式：${(item.payload.formats ?? []).join("、") || "待判断"}\n- 候选编号：${item.candidate_id}`).join("\n\n") || "暂无内容候选。"}\n\n## 内容形成路径\n\n\`\`\`mermaid\nflowchart LR\n    WORK[真实工作] --> PROBLEM[问题与代价]\n    PROBLEM --> FIX[修复与验收]\n    FIX --> METHOD[可复用方法]\n    METHOD --> IDEA[内容候选]\n    IDEA --> CONFIRM{奈奈确认}\n    CONFIRM -->|通过| PUBLISH[进入创作与发布流程]\n    CONFIRM -->|不通过| ARCHIVE[保留或归档]\n\`\`\`\n`;
+  const packet = buildResumePacket(db, scope), cp = packet.checkpoint, stamp = new Date().toISOString(), fence = "\x60\x60\x60";
+  const front = (title) => ["---", "title: " + title, "type: sqlite-read-model", "updated: " + stamp, "state_authority: sqlite", "---", ""];
+  const resume = front("天枢继续执行包").concat([
+    "# 天枢继续执行包", "", "> [!important] 恢复指令", "> " + packet.resume_instruction, "", "## 当前目标", "",
+    cp ? "**" + cp.objective + "**" : "尚未建立检查点。", cp ? "- 阶段：" + cp.phase : "", cp ? "- 验收状态：" + cp.snapshot.acceptance_state : "", cp ? "- 检查点：" + cp.checkpoint_id : "",
+    "", "## 已完成", "", bullets(cp?.snapshot.completed), "", "## 正在推进", "", bullets(cp?.snapshot.in_progress), "", "## 当前卡点", "", bullets(cp?.snapshot.blockers),
+    "", "## 唯一下一步", "", "> " + (cp?.snapshot.next_action ?? "先建立正式检查点"), "", "## 恢复前检查", "",
+    "- [ ] 核对 SQLite 正式状态", "- [ ] 核对 Git 本地与远端哈希", "- [ ] 核对服务健康状态", "- [ ] 核对未解决问题与待确认事项", "- [ ] 不重新规划已经完成的工作", "- [ ] 不访问受保护项目", "",
+    fence + "mermaid", "flowchart LR", "    CLOSE[任务收尾] --> DB[(SQLite 检查点)]", "    DB --> API[Resume API]", "    API --> VERIFY[核对 Git / 服务 / 卡点]", "    VERIFY --> NEXT[从唯一下一步继续]", "    NEXT --> CLOSE", fence, "", "> 本页由 SQLite 生成，不能反向控制任务。", ""
+  ]).filter((x) => x !== "").join("\n");
+  const rows = packet.unresolved_problems.map((x) => "| " + safe(x.title) + " | " + safe(x.symptom) + " | " + x.status + " | " + x.occurrence_count + " | " + safe(x.recurrence_playbook) + " |").join("\n") || "| 暂无未解决问题 | - | - | 0 | - |";
+  const problems = front("天枢问题与卡点地图").concat(["# 天枢问题与卡点地图", "", "| 问题 | 症状 | 状态 | 复发次数 | 下次先做什么 |", "| --- | --- | --- | ---: | --- |", rows, "", fence + "mermaid", "flowchart TD", "    S[发现相似症状] --> F[按 fingerprint 查历史问题]", "    F --> R[先执行复发处理手册]", "    R --> V[运行原验证方法]", "    V --> D{证据通过?}", "    D -->|否| O[保持 monitoring]", "    D -->|是| C[标记 resolved]", fence, ""]).join("\n");
+  const ideas = packet.evolution_candidates.filter((x) => x.kind === "content_idea");
+  const ideaText = ideas.map((x) => "## " + x.title + "\n\n- 状态：" + x.status + "\n- 来源：" + safe(x.payload.source_problem ?? x.source.reference ?? "任务复盘") + "\n- 适合形式：" + ((x.payload.formats ?? []).join("、") || "待判断") + "\n- 候选编号：" + x.candidate_id).join("\n\n") || "暂无内容候选。";
+  const content = front("天枢自媒体内容候选池").concat(["# 天枢自媒体内容候选池", "", "> 从真实项目、真实问题和真实修复中提炼；候选不等于已经批准发布。", "", ideaText, ""]).join("\n");
   for (const [path, value] of [[resumePath, resume], [problemsPath, problems], [contentPath, content]]) { ensure(path); writeFileSync(path, value, "utf8"); }
-  return { resumePath, problemsPath, contentPath, generated_at: stamp, checkpoint_id: checkpoint?.checkpoint_id ?? null };
+  return { resumePath, problemsPath, contentPath, generated_at: stamp, checkpoint_id: cp?.checkpoint_id ?? null };
 }

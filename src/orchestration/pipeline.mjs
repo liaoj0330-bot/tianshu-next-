@@ -1,6 +1,7 @@
 import { createGoal, proposePlan, decideApproval, startRun, recordExecutorResult, verifyRun, decideRun, getPlanHash } from "../core/kernel.mjs";
 import { dispatchTextTask } from "../agents/dispatcher.mjs";
 import { canonicalJson, sha256 } from "../core/store.mjs";
+import { captureVerifiedRunProjectChange } from "../creator/project-observer.mjs";
 
 export function prepareManagedTask(db, { contract, plan, riskLevel = "L1", autoApprove = false, decidedBy = "orchestrator" }) {
   const goalId = createGoal(db, contract);
@@ -52,5 +53,7 @@ export async function dispatchIndependentReview(db, { runId, executorAgentId, re
   const evidence = { executor_agent_run_id: recorded.agent_run_id, executor_status: recorded.status, executor_exit_code: recorded.exit_code, reviewer_agent_run_id: result.agent_run_id, reviewer_report: reviewerReport, reviewer_raw_output: result.stdout, reviewer_status: result.status };
   const report = { ...evidence, evidence_sha256: sha256(canonicalJson(evidence)) };
   const verificationId = verifyRun(db, runId, verdict, report, "agent:" + reviewerAgentId);
-  return { verificationId, passed: verdict, reviewer: result };
+  let projectChangeId = null;
+  try { projectChangeId = captureVerifiedRunProjectChange(db, runId); } catch { /* project observation must not alter verification evidence */ }
+  return { verificationId, passed: verdict, reviewer: result, projectChangeId };
 }

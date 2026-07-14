@@ -3,7 +3,7 @@ import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
 import { analyzeIntent } from "../intelligence/intent-router.mjs";
 import { classifyOperatingDomain } from "../intelligence/domain-router.mjs";
 import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
-import { createGoal, proposePlan, decideApproval, getPlanHash } from "../core/kernel.mjs";
+import { createGoal, proposePlan, decideApproval, decideRun, getPlanHash } from "../core/kernel.mjs";
 import { recordMemoryCandidate, addMemoryCounterexample, promoteMemoryCandidate, listMemoryCandidates } from "../memory/promotion.mjs";
 import { extractCreatorSignals } from "../intelligence/creator-signal-extractor.mjs";
 import { decideIntakeInteraction } from "../intelligence/intake-decision.mjs";
@@ -14,6 +14,7 @@ import { createPlanCandidate, decidePlanCandidate, getCurrentPlanCandidate, revi
 import { configureExecutionBoundary, createExecutionBoundary, decideExecutionBoundary, getExecutionBoundary } from "../planning/execution-boundary.mjs";
 
 import { assessCreatorProject, getCreatorPortfolio, upsertCreatorProjectBaseline } from "../creator/project-priority.mjs";
+import { proposeProjectChange, decideProjectChange, listProjectChanges, getProjectCurrentState } from "../creator/project-changes.mjs";
 import { matchCreatorProject } from "../creator/project-match.mjs";
 import { buildResumePacket, closeTurn, createContinuationCheckpoint, listProblems, recordProblemCase, listEvolutionCandidates } from "../continuity/continuity.mjs";
 function json(res, status, body) {
@@ -37,9 +38,38 @@ async function body(req) {
 
 export function createGateway({ db, host = "127.0.0.1", port = 0, health = null } = {}) {
   if (!db) throw new Error("gateway requires SQLite db");
+  const eventStreams = new Set();
+  function openProjectEventStream(req, res, url) {
+    let cursor = Number(req.headers["last-event-id"] ?? url.searchParams.get("after_id") ?? 0) || 0;
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      "connection": "keep-alive",
+      "access-control-allow-origin": "*"
+    });
+    res.write("retry: 3000\n\n");
+    const flush = () => {
+      for (const item of listProjectChanges(db, { after_id: cursor })) {
+        cursor = Number(item.cursor);
+        res.write("id: " + cursor + "\n");
+        res.write("event: project-change\n");
+        res.write("data: " + JSON.stringify({ change_id: item.change_id, project_key: item.project_key, status: item.status, cursor }) + "\n\n");
+      }
+    };
+    flush();
+    const timer = setInterval(() => { try { flush(); res.write(": heartbeat\n\n"); } catch {} }, 1000);
+    timer.unref?.();
+    const stream = { res, timer };
+    eventStreams.add(stream);
+    req.on("close", () => { clearInterval(timer); eventStreams.delete(stream); });
+  }
   const server = createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/health") {
+      const streamUrl = new URL(req.url, "http://localhost");
+      if (req.method === "GET" && streamUrl.pathname === "/v1/events/stream") {
+        openProjectEventStream(req, res, streamUrl);
+        return;
+      }      if (req.method === "GET" && req.url === "/health") {
         return json(res, 200, { status: "ok", control_plane: "tianshu-orchestrator", state_store: "sqlite", ...(health ? health() : {}) });
       }
       if (req.method === "GET" && req.url === "/v1/overview") {
@@ -92,6 +122,21 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
       if (req.method === "POST" && req.url === "/v1/creator/portfolio/import") {
         const input = await body(req);
         return json(res, 201, { project_keys: upsertCreatorProjectBaseline(db, input), state_authority: "sqlite" });
+      }
+      if (req.method === "GET" && continuityUrl.pathname === "/v1/project-changes") {
+        return json(res, 200, { items: listProjectChanges(db, { project_key: continuityUrl.searchParams.get("project_key"), status: continuityUrl.searchParams.get("status"), after_id: continuityUrl.searchParams.get("after_id") }), state_authority: "sqlite" });
+      }
+      const projectChangeCreateMatch = continuityUrl.pathname.match(/^\/v1\/creator\/projects\/([^/]+)\/changes$/);
+      if (projectChangeCreateMatch && req.method === "POST") {
+        return json(res, 201, { change: proposeProjectChange(db, decodeURIComponent(projectChangeCreateMatch[1]), await body(req)), state_authority: "sqlite" });
+      }
+      const projectStateMatch = continuityUrl.pathname.match(/^\/v1\/creator\/projects\/([^/]+)\/state$/);
+      if (projectStateMatch && req.method === "GET") {
+        return json(res, 200, { project_key: decodeURIComponent(projectStateMatch[1]), state: getProjectCurrentState(db, decodeURIComponent(projectStateMatch[1])), state_authority: "sqlite" });
+      }
+      const projectChangeDecisionMatch = continuityUrl.pathname.match(/^\/v1\/project-changes\/([^/]+)\/decision$/);
+      if (projectChangeDecisionMatch && req.method === "POST") {
+        return json(res, 200, { change: decideProjectChange(db, projectChangeDecisionMatch[1], await body(req)), state_authority: "sqlite" });
       }
       const creatorAssessmentMatch = req.url.match(/^\/v1\/creator\/projects\/([^/]+)\/assessments$/);
       if (creatorAssessmentMatch && req.method === "POST") {
@@ -156,6 +201,12 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
         const approval = decideApproval(db, executionDecisionMatch[1], input.decision === "approve" ? "approved" : "rejected", getPlanHash(db, executionDecisionMatch[1]), input.decided_by ?? "creator");
         decideExecutionBoundary(db, executionDecisionMatch[1], input.decision);
         return json(res,200,{plan_id:executionDecisionMatch[1],status:input.decision === "approve" ? "execution_approved_not_started" : "execution_rejected",task_id:approval.taskId,execution_started:false,state_authority:"sqlite"});
+      }      const runDecisionMatch = req.url.match(/^\/v1\/runs\/([^/]+)\/decision$/);
+      if (runDecisionMatch && req.method === "POST") {
+        const input = await body(req);
+        if (!["accept", "reject"].includes(input.decision)) return json(res, 400, { error: "invalid creator decision" });
+        const decisionId = decideRun(db, runDecisionMatch[1], input.decision, input.reason ?? "", input.decided_by ?? "creator");
+        return json(res, 200, { run_id: runDecisionMatch[1], decision_id: decisionId, status: input.decision === "accept" ? "accepted" : "rejected", state_authority: "sqlite" });
       }      const runMatch = req.url.match(/^\/v1\/runs\/([^/]+)$/);
       if (runMatch && req.method === "GET") {
         const run = db.prepare("SELECT * FROM runs WHERE run_id=?").get(runMatch[1]);
@@ -329,6 +380,6 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
   return {
     server,
     listen: () => new Promise((resolve) => server.listen(port, host, () => resolve(server.address()))),
-    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+    close: () => { for (const stream of eventStreams) { clearInterval(stream.timer); stream.res.end(); } eventStreams.clear(); return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); },
   };
 }
