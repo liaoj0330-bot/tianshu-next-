@@ -15,7 +15,7 @@ test("dashboard is served by the same gateway as intake", async () => {
     const base = `http://${address.address}:${address.port}`;
     const page = await fetch(`${base}/dashboard`);
     assert.equal(page.status, 200);
-    assert.match(await page.text(), /天枢总控/);
+    assert.match(await page.text(), /PERSONAL AI WORK OS/);
     const intake = await fetch(`${base}/v1/intake`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "dashboard", message: "测试目标" }) });
     assert.equal(intake.status, 202);
     const intakeBody = await intake.json();
@@ -26,5 +26,8 @@ test("dashboard is served by the same gateway as intake", async () => {
     const overview = await fetch(`${base}/v1/overview`).then((r) => r.json());
     assert.equal(overview.control_plane, "tianshu-orchestrator");
     assert.equal(overview.counts.intakes, 1);
+    const workspace = await fetch(`${base}/v1/workspace`).then((r) => r.json());
+    assert.equal(workspace.state_authority, "sqlite");
+    assert.equal(workspace.intakes.length, 1);
   } finally { await gateway.close(); db.close(); }
 });

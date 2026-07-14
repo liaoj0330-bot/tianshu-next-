@@ -6,6 +6,7 @@ import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentSt
 import { createGoal } from "../core/kernel.mjs";
 import { recordMemoryCandidate, addMemoryCounterexample, promoteMemoryCandidate, listMemoryCandidates } from "../memory/promotion.mjs";
 import { extractCreatorSignals } from "../intelligence/creator-signal-extractor.mjs";
+import { DASHBOARD_HTML as PRODUCT_DASHBOARD_HTML } from "./dashboard.mjs";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -45,6 +46,18 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
           },
           subjects: db.prepare("SELECT subject_id, display_name, current_snapshot_id, updated_at FROM state_subjects ORDER BY updated_at DESC").all(),
         });
+      }
+      if (req.method === "GET" && req.url === "/v1/workspace") {
+        const intakes = db.prepare("SELECT intake_id, source, payload_json, status, created_at FROM intake_events ORDER BY created_at DESC LIMIT 8").all().map((row) => {
+          const payload = JSON.parse(row.payload_json);
+          return { intake_id: row.intake_id, source: row.source, status: row.status, created_at: row.created_at, message: payload.message ?? payload.payload?.text ?? payload.event_type ?? "device event" };
+        });
+        const goals = db.prepare("SELECT goal_id, contract_json, status, created_at, updated_at FROM goals ORDER BY updated_at DESC LIMIT 6").all().map((row) => {
+          const contract = JSON.parse(row.contract_json);
+          return { goal_id: row.goal_id, objective: contract.objective ?? contract.real_goal ?? "Untitled goal", status: row.status, created_at: row.created_at, updated_at: row.updated_at };
+        });
+        const decisions = db.prepare("SELECT decision_id, decision, reason, created_at FROM decisions ORDER BY created_at DESC LIMIT 6").all();
+        return json(res, 200, { state_authority: "sqlite", intakes, goals, decisions });
       }
       if (req.method === "GET" && req.url === "/v1/decisions") {
         return json(res, 200, { items: db.prepare(`SELECT d.decision_id, d.run_id, d.decision, d.reason, d.decided_by, d.created_at, v.passed, v.report_json, v.verifier FROM decisions d LEFT JOIN verifications v ON v.run_id=d.run_id ORDER BY d.created_at DESC`).all().map((row) => ({ ...row, report: row.report_json ? JSON.parse(row.report_json) : null })) });
@@ -133,7 +146,7 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
       }
       if (req.method === "GET" && (req.url === "/" || req.url === "/dashboard")) {
         res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-        return res.end(DASHBOARD_HTML);
+        return res.end(PRODUCT_DASHBOARD_HTML);
       }
       if (req.method === "POST" && req.url === "/v1/intake") {
         const input = await body(req);
