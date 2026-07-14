@@ -184,8 +184,7 @@ export function openStore(dbPath) {
       worker_id TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('active','expired','released')),
-      created_at TEXT NOT NULL,
-      UNIQUE(job_id)
+      created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS project_locks (
       project_id TEXT PRIMARY KEY,
@@ -291,6 +290,10 @@ export function openStore(dbPath) {
       SELECT RAISE(ABORT, 'state questions are append-only');
     END;
   `);
+  const legacyLeaseConstraint = db.prepare("PRAGMA index_list(worker_leases)").all().some((index) => index.unique === 1 && index.origin === "u");
+  if (legacyLeaseConstraint) {
+    db.exec("PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE; ALTER TABLE worker_leases RENAME TO worker_leases_legacy; CREATE TABLE worker_leases (lease_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), worker_id TEXT NOT NULL, expires_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','expired','released')), created_at TEXT NOT NULL); INSERT INTO worker_leases SELECT * FROM worker_leases_legacy; DROP TABLE worker_leases_legacy; COMMIT; PRAGMA foreign_keys = ON;");
+  }
   return db;
 }
 
