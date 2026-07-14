@@ -1,13 +1,18 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { newId, now, appendEvent } from "../core/store.mjs";
 import { getAgent } from "./registry.mjs";
 
 function runCommand(command, args, { timeoutMs = 15000, cwd = process.cwd(), cancelCheck = null, pollMs = 50 } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true, shell: false, cwd });
+    const child = spawn(command, args, { windowsHide: true, shell: false, cwd, detached: process.platform !== "win32" });
     let stdout = ""; let stderr = ""; let timedOut = false; let cancelled = false; let settled = false;
     child.stdin.end();
-    const stop = (reason) => { if (settled) return; timedOut ||= reason === "timeout"; cancelled ||= reason === "cancel"; child.kill("SIGTERM"); };
+    const stop = (reason) => {
+      if (settled) return;
+      timedOut ||= reason === "timeout"; cancelled ||= reason === "cancel";
+      if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { windowsHide: true });
+      else { try { process.kill(-child.pid, "SIGTERM"); } catch { child.kill("SIGTERM"); } }
+    };
     const timer = setTimeout(() => stop("timeout"), timeoutMs);
     const cancelTimer = cancelCheck ? setInterval(() => { try { if (cancelCheck()) stop("cancel"); } catch { stop("cancel"); } }, pollMs) : null;
     const finish = (result) => { if (settled) return; settled = true; clearTimeout(timer); if (cancelTimer) clearInterval(cancelTimer); resolve(result); };

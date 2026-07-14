@@ -38,12 +38,14 @@ export function startJob(db, jobId, leaseId) {
 
 export function requestCancel(db, jobId) {
   const job = db.prepare("SELECT * FROM jobs WHERE job_id=?").get(jobId); if (!job) throw new Error("unknown job");
+  if (["succeeded", "failed", "cancelled"].includes(job.status)) throw new Error("cannot cancel a terminal job");
   const status = ["queued", "retry_wait"].includes(job.status) ? "cancelled" : "cancel_requested";
   db.prepare("UPDATE jobs SET status=?,updated_at=? WHERE job_id=?").run(status, now(), jobId); appendEvent(db,"job",jobId,`job.${status}`,{}); return status;
 }
 
 export function finishJob(db, jobId, outcome, detail = {}) {
   const job = db.prepare("SELECT * FROM jobs WHERE job_id=?").get(jobId); if (!job) throw new Error("unknown job");
+  if (!["running", "cancel_requested"].includes(job.status)) throw new Error("job must be running before it can finish");
   return tx(db, () => { const success = outcome === "succeeded"; const cancelled = outcome === "cancelled" || job.status === "cancel_requested"; const next = success ? "succeeded" : cancelled ? "cancelled" : (job.attempts < job.max_attempts ? "retry_wait" : "failed"); db.prepare("UPDATE jobs SET status=?,available_at=?,updated_at=? WHERE job_id=?").run(next, success || cancelled ? now() : iso(detail.retry_delay_ms ?? 100), now(), jobId); if (job.lease_id) { db.prepare("UPDATE worker_leases SET status='released' WHERE lease_id=?").run(job.lease_id); db.prepare("DELETE FROM project_locks WHERE lease_id=?").run(job.lease_id); } if (!success && !cancelled) db.prepare("INSERT INTO failure_cases VALUES (?, ?, ?, ?, ?, ?)").run(newId("failure"), jobId, job.project_id, detail.code ?? (outcome === "timed_out" ? "timeout" : "execution_failed"), canonicalJson(detail), now()); appendEvent(db,"job",jobId,"job."+next,{...detail,outcome}); return next; });
 }
 

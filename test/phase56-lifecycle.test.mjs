@@ -33,7 +33,7 @@ test("running cancellation terminates the agent and never retries", async () => 
 test("independent review rejects self-review and persists another agent verdict", async () => {
   const db=store();
   registerAgent(db,{agent_id:"executor",display_name:"Executor",command:process.execPath,args:["-e","console.log('DONE')"],capabilities:["text_task"],risk_level:"L0"});
-  registerAgent(db,{agent_id:"reviewer",display_name:"Reviewer",command:process.execPath,args:["-e","console.log('PASS evidence checked')"],capabilities:["text_task"],risk_level:"L0"});
+  registerAgent(db,{agent_id:"reviewer",display_name:"Reviewer",command:process.execPath,args:["-e",`console.log(JSON.stringify({verdict:"pass",checks:[{name:"evidence",passed:true,evidence:"SQLite executor run inspected"}]}))`],capabilities:["text_task"],risk_level:"L0"});
   const prepared=prepareManagedTask(db,{contract:{objective:"isolated task",completion_criteria:["review"]},plan:{action:"text",allowed_paths:[]},riskLevel:"L0",autoApprove:true});
   const executed=await dispatchManagedAgentTask(db,{taskId:prepared.taskId,agentId:"executor",prompt:"do"});
   await assert.rejects(dispatchIndependentReview(db,{runId:executed.runId,executorAgentId:"executor",reviewerAgentId:"executor",prompt:"review"}),/different agent/);
@@ -51,4 +51,19 @@ test("reviewer PASS cannot turn a failed executor result into success", async ()
   const reviewed=await dispatchIndependentReview(db,{runId:executed.runId,executorAgentId:"failed-executor",reviewerAgentId:"pass-reviewer",prompt:"review"});
   assert.equal(reviewed.passed,false); const report=JSON.parse(db.prepare("SELECT report_json FROM verifications WHERE run_id=?").get(executed.runId).report_json);
   assert.match(report.evidence_sha256,/^[a-f0-9]{64}$/); db.close();
+});
+test("plain PASS is rejected because independent review requires structured evidence", async () => {
+  const db=store(); project(db);
+  registerAgent(db,{agent_id:"executor",display_name:"Executor",command:process.execPath,args:["-e","console.log('done')"],capabilities:["text_task"],risk_level:"L0"});
+  registerAgent(db,{agent_id:"weak-reviewer",display_name:"Weak Reviewer",command:process.execPath,args:["-e","console.log('PASS')"],capabilities:["text_task"],risk_level:"L0"});
+  const prepared=prepareManagedTask(db,{contract:{objective:"reject weak review",completion_criteria:["structured evidence"]},plan:{action:"text",allowed_paths:[]},riskLevel:"L0",autoApprove:true});
+  const executed=await dispatchManagedAgentTask(db,{taskId:prepared.taskId,agentId:"executor",prompt:"execute"});
+  const reviewed=await dispatchIndependentReview(db,{runId:executed.runId,executorAgentId:"executor",reviewerAgentId:"weak-reviewer",prompt:"review"});
+  assert.equal(reviewed.passed,false); db.close();
+});
+
+test("terminal jobs reject cancellation and duplicate finish transitions", () => {
+  const db=store(); project(db); const jobId=enqueueJob(db,{projectId:"p",maxAttempts:1});
+  const lease=claimJob(db,"w"); startJob(db,jobId,lease.lease_id); assert.equal(finishJob(db,jobId,"succeeded"),"succeeded");
+  assert.throws(()=>requestCancel(db,jobId),/terminal/); assert.throws(()=>finishJob(db,jobId,"failed"),/must be running/); db.close();
 });

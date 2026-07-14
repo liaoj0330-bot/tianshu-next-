@@ -40,9 +40,16 @@ export async function dispatchIndependentReview(db, { runId, executorAgentId, re
   if (executorRun.agent_id === reviewerAgentId) throw new Error("independent review requires a different agent");
   const result = await dispatchTextTask(db, reviewerAgentId, prompt, { timeoutMs, cwd });
   const executorSucceeded = recorded.status === "succeeded" && recorded.exit_code === 0;
-  const reviewerPassed = result.status === "succeeded" && /^PASS(?:\s|$)/i.test(result.stdout.trim());
+  let reviewerReport = null;
+  try { reviewerReport = JSON.parse(result.stdout.trim()); } catch { /* malformed review is evidence of failure */ }
+  const reviewerPassed = result.status === "succeeded"
+    && reviewerReport?.verdict === "pass"
+    && Array.isArray(reviewerReport.checks)
+    && reviewerReport.checks.length > 0
+    && reviewerReport.checks.every((check) => check && check.passed === true
+      && typeof check.evidence === "string" && check.evidence.trim());
   const verdict = executorSucceeded && reviewerPassed;
-  const evidence = { executor_agent_run_id: recorded.agent_run_id, executor_status: recorded.status, executor_exit_code: recorded.exit_code, reviewer_agent_run_id: result.agent_run_id, reviewer_output: result.stdout, reviewer_status: result.status };
+  const evidence = { executor_agent_run_id: recorded.agent_run_id, executor_status: recorded.status, executor_exit_code: recorded.exit_code, reviewer_agent_run_id: result.agent_run_id, reviewer_report: reviewerReport, reviewer_raw_output: result.stdout, reviewer_status: result.status };
   const report = { ...evidence, evidence_sha256: sha256(canonicalJson(evidence)) };
   const verificationId = verifyRun(db, runId, verdict, report, "agent:" + reviewerAgentId);
   return { verificationId, passed: verdict, reviewer: result };
