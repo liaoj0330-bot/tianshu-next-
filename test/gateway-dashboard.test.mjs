@@ -18,6 +18,8 @@ test("dashboard is served by the same gateway as intake", async () => {
     assert.match(await page.text(), /天枢总控/);
     const intake = await fetch(`${base}/v1/intake`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source: "dashboard", message: "测试目标" }) });
     assert.equal(intake.status, 202);
+    const intakeBody = await intake.json();
+    assert.deepEqual(intakeBody.analysis.domains, ["uncategorized"]);
     const items = await fetch(`${base}/v1/intakes`).then((r) => r.json());
     assert.equal(items.items.length, 1);
     assert.equal(items.items[0].source, "dashboard");

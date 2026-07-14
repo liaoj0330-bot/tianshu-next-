@@ -54,9 +54,10 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
         const input = await body(req);
         if (!input.message || typeof input.message !== "string") return json(res, 400, { error: "message is required" });
         const intakeId = newId("intake");
-        db.prepare("INSERT INTO intake_events VALUES (?, ?, ?, 'accepted', ?)").run(intakeId, input.source ?? "unknown", canonicalJson({ message: input.message, metadata: input.metadata ?? {} }), now());
+        const analysis = analyzeIntent(input.message);
+        db.prepare("INSERT INTO intake_events VALUES (?, ?, ?, 'accepted', ?)").run(intakeId, input.source ?? "unknown", canonicalJson({ message: input.message, metadata: input.metadata ?? {}, analysis }), now());
         appendEvent(db, "intake", intakeId, "intake.accepted", { source: input.source ?? "unknown" });
-        return json(res, 202, { intake_id: intakeId, status: "accepted", routed_to: "tianshu-orchestrator", state_authority: "sqlite", next: "goal_manager" });
+        return json(res, 202, { intake_id: intakeId, status: "accepted", routed_to: "tianshu-orchestrator", state_authority: "sqlite", next: "goal_manager", analysis });
       }
       if (req.method === "GET" && req.url === "/v1/intakes") {
         return json(res, 200, { items: db.prepare("SELECT intake_id, source, status, created_at FROM intake_events ORDER BY created_at DESC").all() });
