@@ -1,4 +1,5 @@
 import { createGoal, proposePlan, decideApproval, startRun, recordExecutorResult, verifyRun, decideRun, getPlanHash } from "../core/kernel.mjs";
+import { dispatchTextTask } from "../agents/dispatcher.mjs";
 
 export function prepareManagedTask(db, { contract, plan, riskLevel = "L1", autoApprove = false, decidedBy = "orchestrator" }) {
   const goalId = createGoal(db, contract);
@@ -20,4 +21,11 @@ export function recordManagedExecution(db, taskId, executorResult, verification,
     ? decideRun(db, runId, creatorDecision.decision, creatorDecision.reason ?? "", creatorDecision.decidedBy ?? "creator")
     : null;
   return { runId, decisionId };
+}
+
+export async function dispatchManagedAgentTask(db, { taskId, agentId, prompt, jobId = null, timeoutMs = 120000, cwd = process.cwd() }) {
+  const runId = startRun(db, taskId);
+  const result = await dispatchTextTask(db, agentId, prompt, { jobId, timeoutMs, cwd });
+  recordExecutorResult(db, runId, { claim: result.stdout, agent_run_id: result.agent_run_id, status: result.status, exit_code: result.exitCode });
+  return { runId, agentRunId: result.agent_run_id, executor: result, next: "independent_verification" };
 }
