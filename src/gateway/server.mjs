@@ -6,6 +6,13 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+const DASHBOARD_HTML = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>天枢总控</title><style>
+body{margin:0;background:#0b1220;color:#edf2f7;font:16px system-ui,"Microsoft YaHei",sans-serif}main{max-width:1180px;margin:0 auto;padding:32px}h1{font-size:32px;margin:0 0 8px}.muted{color:#9fb0c2}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}.card{background:#142238;border:1px solid #263b55;border-radius:14px;padding:20px}.wide{grid-column:1/-1}textarea{width:100%;min-height:130px;background:#0e192a;color:#edf2f7;border:1px solid #38516d;border-radius:10px;padding:12px;box-sizing:border-box;font:inherit}button{margin-top:12px;background:#2dd4bf;color:#06211e;border:0;border-radius:9px;padding:10px 18px;font-weight:700;cursor:pointer}pre{white-space:pre-wrap;color:#b8c7d9;line-height:1.55}.pill{display:inline-block;border-radius:999px;padding:5px 10px;background:#1d344e;color:#7ee7d7;font-size:13px}</style></head><body><main>
+<div class="muted">TIANSHU ORCHESTRATOR / SINGLE CONTROL PLANE</div><h1>天枢总控</h1><div class="muted">你只需要输入目标，系统负责理解、调度、验收和回写。</div>
+<div class="grid"><section class="card"><div class="muted">控制平面</div><h2 id="health">检查中…</h2><span class="pill">SQLite 状态真相</span></section><section class="card"><div class="muted">当前入口</div><h2>自然语言目标</h2><span class="pill">AgentHub / 手机 / 硬件</span></section><section class="card"><div class="muted">当前原则</div><h2>先判断，再执行</h2><span class="pill">独立验收</span></section><section class="card wide"><div class="muted">告诉天枢你要什么</div><textarea id="message" placeholder="例如：最近澳大利亚合作发生重大变化，请判断我的当前优先级，并告诉我还缺什么信息。"></textarea><button onclick="send()">交给天枢处理</button><pre id="result">等待输入…</pre></section><section class="card wide"><div class="muted">最近收到的目标</div><pre id="intakes">加载中…</pre></section></div></main><script>
+async function load(){const h=await fetch('/health').then(r=>r.json());document.querySelector('#health').textContent=h.status==='ok'?'在线':'异常';const x=await fetch('/v1/intakes').then(r=>r.json());document.querySelector('#intakes').textContent=x.items.length?x.items.map(i=>i.created_at+'  '+i.source+'  '+i.status).join('\\n'):'暂无目标';}async function send(){const message=document.querySelector('#message').value.trim();if(!message)return;const r=await fetch('/v1/intake',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source:'dashboard',message,metadata:{client:'tianshu-dashboard'}})});document.querySelector('#result').textContent=JSON.stringify(await r.json(),null,2);document.querySelector('#message').value='';load();}load();
+</script></body></html>`;
+
 async function body(req) {
   let data = "";
   for await (const chunk of req) data += chunk;
@@ -19,6 +26,23 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
     try {
       if (req.method === "GET" && req.url === "/health") {
         return json(res, 200, { status: "ok", control_plane: "tianshu-orchestrator", state_store: "sqlite" });
+      }
+      if (req.method === "GET" && req.url === "/v1/overview") {
+        return json(res, 200, {
+          control_plane: "tianshu-orchestrator",
+          state_store: "sqlite",
+          counts: {
+            intakes: db.prepare("SELECT COUNT(*) AS count FROM intake_events").get().count,
+            goals: db.prepare("SELECT COUNT(*) AS count FROM goals").get().count,
+            active_states: db.prepare("SELECT COUNT(*) AS count FROM state_subjects WHERE current_snapshot_id IS NOT NULL").get().count,
+            agent_runs: db.prepare("SELECT COUNT(*) AS count FROM agent_runs").get().count,
+          },
+          subjects: db.prepare("SELECT subject_id, display_name, current_snapshot_id, updated_at FROM state_subjects ORDER BY updated_at DESC").all(),
+        });
+      }
+      if (req.method === "GET" && (req.url === "/" || req.url === "/dashboard")) {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        return res.end(DASHBOARD_HTML);
       }
       if (req.method === "POST" && req.url === "/v1/intake") {
         const input = await body(req);
