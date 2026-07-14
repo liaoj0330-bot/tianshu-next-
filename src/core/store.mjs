@@ -301,7 +301,81 @@ export function openStore(dbPath) {
       fingerprint TEXT NOT NULL,
       observed_at TEXT NOT NULL,
       PRIMARY KEY(project_key, source_kind)
+    );    CREATE TABLE IF NOT EXISTS knowledge_entities (
+      entity_id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL,
+      canonical_key TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      access_policy TEXT NOT NULL CHECK(access_policy IN ('normal','read_only','protected')),
+      status TEXT NOT NULL CHECK(status IN ('active','inactive','historical')),
+      valid_from TEXT NOT NULL,
+      valid_to TEXT,
+      metadata_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(entity_type, canonical_key)
     );
+    CREATE TABLE IF NOT EXISTS knowledge_aliases (
+      alias_id TEXT PRIMARY KEY,
+      entity_id TEXT NOT NULL REFERENCES knowledge_entities(entity_id),
+      alias TEXT NOT NULL,
+      normalized_alias TEXT NOT NULL,
+      source TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(entity_id, normalized_alias)
+    );
+    CREATE INDEX IF NOT EXISTS knowledge_alias_lookup ON knowledge_aliases(normalized_alias);
+    CREATE TABLE IF NOT EXISTS knowledge_sources (
+      source_id TEXT PRIMARY KEY,
+      source_kind TEXT NOT NULL,
+      reference TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      observed_at TEXT NOT NULL,
+      access_policy TEXT NOT NULL CHECK(access_policy IN ('normal','read_only','protected')),
+      metadata_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(source_kind, reference, content_hash)
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_evidence (
+      evidence_id TEXT PRIMARY KEY,
+      evidence_key TEXT NOT NULL UNIQUE,
+      entity_id TEXT NOT NULL REFERENCES knowledge_entities(entity_id),
+      source_id TEXT NOT NULL REFERENCES knowledge_sources(source_id),
+      claim_type TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      confidence TEXT NOT NULL CHECK(confidence IN ('high','medium','low')),
+      status TEXT NOT NULL CHECK(status IN ('candidate','confirmed','superseded','rejected')),
+      valid_from TEXT NOT NULL,
+      valid_to TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS knowledge_evidence_entity_status ON knowledge_evidence(entity_id,status,claim_type);
+    CREATE TABLE IF NOT EXISTS knowledge_relations (
+      relation_id TEXT PRIMARY KEY,
+      from_entity_id TEXT NOT NULL REFERENCES knowledge_entities(entity_id),
+      to_entity_id TEXT NOT NULL REFERENCES knowledge_entities(entity_id),
+      relation_type TEXT NOT NULL,
+      evidence_id TEXT REFERENCES knowledge_evidence(evidence_id),
+      status TEXT NOT NULL CHECK(status IN ('candidate','confirmed','superseded','rejected')),
+      valid_from TEXT NOT NULL,
+      valid_to TEXT,
+      metadata_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(from_entity_id,to_entity_id,relation_type,evidence_id)
+    );
+    CREATE INDEX IF NOT EXISTS knowledge_relation_from ON knowledge_relations(from_entity_id,status);
+    CREATE INDEX IF NOT EXISTS knowledge_relation_to ON knowledge_relations(to_entity_id,status);
+    CREATE TABLE IF NOT EXISTS knowledge_terms (
+      entity_id TEXT NOT NULL REFERENCES knowledge_entities(entity_id),
+      term TEXT NOT NULL,
+      normalized_term TEXT NOT NULL,
+      weight REAL NOT NULL,
+      source TEXT NOT NULL,
+      PRIMARY KEY(entity_id,normalized_term,source)
+    );
+    CREATE INDEX IF NOT EXISTS knowledge_term_lookup ON knowledge_terms(normalized_term);
     CREATE TABLE IF NOT EXISTS plan_candidates (
       candidate_id TEXT PRIMARY KEY,
       intake_id TEXT NOT NULL REFERENCES intake_events(intake_id),

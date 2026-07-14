@@ -1,4 +1,5 @@
 import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
+import { indexProjectChange, updateIndexedProjectChangeDecision } from "../indexing/knowledge-index.mjs";
 
 const TYPES = new Set(["stage", "progress", "risk", "deadline", "priority", "status", "note"]);
 const CONFIDENCE = new Set(["high", "medium", "low"]);
@@ -39,6 +40,7 @@ export function proposeProjectChange(db, projectKey, input = {}) {
   db.prepare("INSERT INTO project_change_candidates VALUES (?,?,?,?,?,?,?,?,?,?,'awaiting_creator_confirmation',?,NULL,NULL,NULL)")
     .run(id, projectKey, input.change_type, current?.value_json ?? null, proposedJson, input.summary.trim(), canonicalJson(input.impact ?? []), canonicalJson(input.source), canonicalJson(input.evidence ?? []), input.confidence ?? "medium", stamp);
   appendEvent(db, "project_change", id, "project_change.proposed", { project_key: projectKey, change_type: input.change_type });
+  try { indexProjectChange(db, id); } catch { /* index can be rebuilt from SQLite facts */ }
   return getProjectChange(db, id);
 }
 
@@ -56,6 +58,8 @@ export function decideProjectChange(db, changeId, { decision, decided_by = "crea
       for (const item of superseded) appendEvent(db, "project_change", item.change_id, "project_change.superseded", { accepted_change_id: changeId, decided_by });
     }
     appendEvent(db, "project_change", changeId, "project_change." + status, { project_key: row.project_key, decided_by });
+    updateIndexedProjectChangeDecision(db, changeId);
+    if (status === "accepted") for (const item of db.prepare("SELECT change_id FROM project_change_candidates WHERE project_key=? AND change_type=? AND status='superseded'").all(row.project_key,row.change_type)) updateIndexedProjectChangeDecision(db,item.change_id);
     return getProjectChange(db, changeId);
   });
 }

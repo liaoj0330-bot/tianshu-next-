@@ -15,6 +15,7 @@ import { configureExecutionBoundary, createExecutionBoundary, decideExecutionBou
 
 import { assessCreatorProject, getCreatorPortfolio, upsertCreatorProjectBaseline } from "../creator/project-priority.mjs";
 import { proposeProjectChange, decideProjectChange, listProjectChanges, getProjectCurrentState } from "../creator/project-changes.mjs";
+import { syncCreatorPortfolioIndex, searchKnowledgeIndex, getKnowledgeEntity, getKnowledgeIndexHealth, rebuildKnowledgeIndex } from "../indexing/knowledge-index.mjs";
 import { matchCreatorProject } from "../creator/project-match.mjs";
 import { buildResumePacket, closeTurn, createContinuationCheckpoint, listProblems, recordProblemCase, listEvolutionCandidates } from "../continuity/continuity.mjs";
 function json(res, status, body) {
@@ -116,12 +117,24 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
         const input = await body(req);
         return json(res, 200, { ...matchCreatorProject(input.message, getCreatorPortfolio(db)), state_authority: "sqlite" });
       }
-      if (req.method === "GET" && req.url === "/v1/creator/portfolio") {
+      if (req.method === "GET" && continuityUrl.pathname === "/v1/index/health") {
+        return json(res, 200, { ...getKnowledgeIndexHealth(db), state_authority: "sqlite" });
+      }
+      if (req.method === "GET" && continuityUrl.pathname === "/v1/index/search") {
+        return json(res, 200, { items: searchKnowledgeIndex(db, continuityUrl.searchParams.get("q") ?? ""), state_authority: "sqlite" });
+      }
+      const indexEntityMatch = continuityUrl.pathname.match(/^\/v1\/index\/entities\/([^/]+)$/);
+      if (indexEntityMatch && req.method === "GET") {
+        const entity = getKnowledgeEntity(db, indexEntityMatch[1]); return entity ? json(res, 200, { entity, state_authority: "sqlite" }) : json(res, 404, { error: "index entity not found" });
+      }
+      if (req.method === "POST" && continuityUrl.pathname === "/v1/index/rebuild") {
+        return json(res, 200, { health: rebuildKnowledgeIndex(db), state_authority: "sqlite" });
+      }      if (req.method === "GET" && req.url === "/v1/creator/portfolio") {
         return json(res, 200, { state_authority: "sqlite", items: getCreatorPortfolio(db) });
       }
       if (req.method === "POST" && req.url === "/v1/creator/portfolio/import") {
         const input = await body(req);
-        return json(res, 201, { project_keys: upsertCreatorProjectBaseline(db, input), state_authority: "sqlite" });
+        const project_keys = upsertCreatorProjectBaseline(db, input); syncCreatorPortfolioIndex(db); return json(res, 201, { project_keys, state_authority: "sqlite" });
       }
       if (req.method === "GET" && continuityUrl.pathname === "/v1/project-changes") {
         return json(res, 200, { items: listProjectChanges(db, { project_key: continuityUrl.searchParams.get("project_key"), status: continuityUrl.searchParams.get("status"), after_id: continuityUrl.searchParams.get("after_id") }), state_authority: "sqlite" });

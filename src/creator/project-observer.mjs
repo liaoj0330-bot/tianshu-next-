@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { now } from "../core/store.mjs";
+import { appendEvent, now } from "../core/store.mjs";
 import { proposeProjectChange } from "./project-changes.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -17,7 +17,11 @@ export function scanRegisteredProjectChanges(db, { git = spawnSync } = {}) {
     db.prepare("INSERT INTO project_observation_cursors VALUES (?, 'git_status', ?, ?) ON CONFLICT(project_key,source_kind) DO UPDATE SET fingerprint=excluded.fingerprint,observed_at=excluded.observed_at").run(project.project_id, fingerprint, now());
     if (!previous) { results.push({ project_key: project.project_id, status: "baseline_recorded", fingerprint }); continue; }
     if (previous.fingerprint === fingerprint) { results.push({ project_key: project.project_id, status: "unchanged", fingerprint }); continue; }
-    const change = proposeProjectChange(db, project.project_id, {
+    for (const stale of db.prepare("SELECT change_id FROM project_change_candidates WHERE project_key=? AND change_type='progress' AND status='awaiting_creator_confirmation' AND source_json LIKE '%\"kind\":\"git_observer\"%'").all(project.project_id)) {
+      db.prepare("UPDATE project_change_candidates SET status='superseded',decided_at=?,decided_by='system:git_observer',decision_reason='replaced by newer Git snapshot' WHERE change_id=?").run(now(), stale.change_id);
+      db.prepare("UPDATE knowledge_evidence SET status='superseded',valid_to=?,updated_at=? WHERE evidence_key=?").run(now(), now(), "project_change:" + stale.change_id);
+      appendEvent(db, "project_change", stale.change_id, "project_change.superseded", { reason: "newer_git_snapshot" });
+    }    const change = proposeProjectChange(db, project.project_id, {
       change_type: "progress",
       summary: normalized ? "白名单项目工作区发生 Git 变化" : "白名单项目工作区已恢复干净",
       proposed_value: { git_dirty: Boolean(normalized), changed_paths: normalized.split("\n").filter(Boolean).slice(0, 50) },
@@ -47,4 +51,10 @@ export function captureVerifiedRunProjectChange(db, runId) {
     evidence: [{ kind: "verification", verifier: row.verifier }],
     confidence: "high"
   }).change_id;
+}
+export function compactPendingGitObservations(db, projectKey) {
+  const rows=db.prepare("SELECT change_id,created_at FROM project_change_candidates WHERE project_key=? AND change_type='progress' AND status='awaiting_creator_confirmation' AND source_json LIKE '%\"kind\":\"git_observer\"%' ORDER BY created_at DESC").all(projectKey);
+  const stamp=now();
+  for(const row of rows.slice(1)){db.prepare("UPDATE project_change_candidates SET status='superseded',decided_at=?,decided_by='system:git_observer',decision_reason='replaced by newer Git snapshot' WHERE change_id=?").run(stamp,row.change_id);db.prepare("UPDATE knowledge_evidence SET status='superseded',valid_to=?,updated_at=? WHERE evidence_key=?").run(stamp,stamp,"project_change:"+row.change_id);appendEvent(db,"project_change",row.change_id,"project_change.superseded",{reason:"newer_git_snapshot"});}
+  return {kept:rows[0]?.change_id??null,superseded:rows.slice(1).map(row=>row.change_id)};
 }
