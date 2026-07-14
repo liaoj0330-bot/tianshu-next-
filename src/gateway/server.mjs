@@ -15,6 +15,7 @@ import { configureExecutionBoundary, createExecutionBoundary, decideExecutionBou
 
 import { assessCreatorProject, getCreatorPortfolio, upsertCreatorProjectBaseline } from "../creator/project-priority.mjs";
 import { matchCreatorProject } from "../creator/project-match.mjs";
+import { buildResumePacket, closeTurn, createContinuationCheckpoint, listProblems, recordProblemCase, listEvolutionCandidates } from "../continuity/continuity.mjs";
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
@@ -60,7 +61,25 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
       if (req.method === "GET" && req.url === "/v1/confirmations") {
         return json(res, 200, { items: getConfirmationReadModel(db), state_authority: "sqlite" });
       }
-      if (req.method === "GET" && req.url === "/v1/decisions") {
+      const continuityUrl = new URL(req.url, "http://localhost");
+      if (req.method === "GET" && continuityUrl.pathname === "/v1/continuity/resume") {
+        return json(res, 200, buildResumePacket(db, continuityUrl.searchParams.get("scope") ?? "tianshu"));
+      }
+      if (req.method === "POST" && req.url === "/v1/continuity/checkpoints") {
+        return json(res, 201, { checkpoint: createContinuationCheckpoint(db, await body(req)), state_authority: "sqlite" });
+      }
+      if (req.method === "POST" && req.url === "/v1/continuity/close-turn") {
+        return json(res, 201, closeTurn(db, await body(req)));
+      }
+      if (req.method === "GET" && continuityUrl.pathname === "/v1/continuity/problems") {
+        return json(res, 200, { items: listProblems(db, { status: continuityUrl.searchParams.get("status") ?? undefined }), state_authority: "sqlite" });
+      }
+      if (req.method === "POST" && req.url === "/v1/continuity/problems") {
+        return json(res, 201, { problem: recordProblemCase(db, await body(req)), state_authority: "sqlite" });
+      }
+      if (req.method === "GET" && continuityUrl.pathname === "/v1/continuity/evolution-candidates") {
+        return json(res, 200, { items: listEvolutionCandidates(db, continuityUrl.searchParams.get("kind")), state_authority: "sqlite" });
+      }      if (req.method === "GET" && req.url === "/v1/decisions") {
         return json(res, 200, { items: db.prepare(`SELECT d.decision_id, d.run_id, d.decision, d.reason, d.decided_by, d.created_at, v.passed, v.report_json, v.verifier FROM decisions d LEFT JOIN verifications v ON v.run_id=d.run_id ORDER BY d.created_at DESC`).all().map((row) => ({ ...row, report: row.report_json ? JSON.parse(row.report_json) : null })) });
       }
       if (req.method === "POST" && req.url === "/v1/creator/project-match") {

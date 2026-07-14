@@ -299,7 +299,44 @@ export function openStore(dbPath) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-    CREATE TRIGGER IF NOT EXISTS goals_contract_immutable
+    CREATE TABLE IF NOT EXISTS continuation_checkpoints (
+      checkpoint_id TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      objective TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('current','historical')),
+      snapshot_json TEXT NOT NULL,
+      source_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      superseded_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS continuation_one_current
+      ON continuation_checkpoints(scope) WHERE status='current';
+    CREATE TABLE IF NOT EXISTS problem_cases (
+      problem_id TEXT PRIMARY KEY,
+      fingerprint TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      symptom TEXT NOT NULL,
+      root_cause TEXT,
+      resolution TEXT,
+      recurrence_playbook TEXT NOT NULL,
+      validation_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('open','resolved','monitoring')),
+      occurrence_count INTEGER NOT NULL DEFAULT 1,
+      source_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS evolution_candidates (
+      candidate_id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL CHECK(kind IN ('operational_rule','content_idea')),
+      title TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('candidate','promoted','rejected')),
+      source_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );    CREATE TRIGGER IF NOT EXISTS goals_contract_immutable
     BEFORE UPDATE OF contract_json, contract_hash ON goals
     BEGIN
       SELECT RAISE(ABORT, 'goal contract is immutable');

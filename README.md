@@ -68,7 +68,7 @@ npm test
 npm run service
 ```
 
-当前完整测试基线：**75/75 通过**。覆盖可信内核、动态状态、项目量化、统一入口、计划版本、双确认、退出码假成功、越界修改、超时、取消、重试、独立复核、恢复和 SQLite 镜像回写。
+当前完整测试基线：**80/80 通过**。覆盖可信内核、动态状态、项目量化、统一入口、计划版本、双确认、退出码假成功、越界修改、超时、取消、重试、独立复核、恢复和 SQLite 镜像回写。
 
 ## 文档入口
 
@@ -76,6 +76,7 @@ npm run service
 - [产品闭环与 P5 当前状态](docs/TIANSHU_PRODUCT_LOOP_P5_STATUS_002.md)
 - [天枢系统可视化结构图](docs/TIANSHU_SYSTEM_VISUAL_MAP_001.md)
 - [Obsidian 可视化回写证据](docs/TIANSHU_OBSIDIAN_VISUAL_WRITEBACK_002.md)
+- [跨会话连续性与受控进化报告](docs/TIANSHU_CONTINUITY_EVOLUTION_REPORT_001.md)
 - [P5 生命周期证据](docs/TIANSHU_P5_LIFECYCLE_EVIDENCE_002.md)
 - [P5 加固证据](docs/TIANSHU_P5_HARDENING_EVIDENCE_003.md)
 - [AgentHub 接入验收](docs/TIANSHU_GATEWAY_AGENTHUB_ACCEPTANCE_001.md)
