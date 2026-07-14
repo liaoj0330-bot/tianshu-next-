@@ -45,6 +45,17 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
           subjects: db.prepare("SELECT subject_id, display_name, current_snapshot_id, updated_at FROM state_subjects ORDER BY updated_at DESC").all(),
         });
       }
+      if (req.method === "GET" && req.url === "/v1/decisions") {
+        return json(res, 200, { items: db.prepare(`SELECT d.decision_id, d.run_id, d.decision, d.reason, d.decided_by, d.created_at, v.passed, v.report_json, v.verifier FROM decisions d LEFT JOIN verifications v ON v.run_id=d.run_id ORDER BY d.created_at DESC`).all().map((row) => ({ ...row, report: row.report_json ? JSON.parse(row.report_json) : null })) });
+      }
+      const runMatch = req.url.match(/^\/v1\/runs\/([^/]+)$/);
+      if (runMatch && req.method === "GET") {
+        const run = db.prepare("SELECT * FROM runs WHERE run_id=?").get(runMatch[1]);
+        if (!run) return json(res, 404, { error: "run not found" });
+        const verification = db.prepare("SELECT * FROM verifications WHERE run_id=?").get(runMatch[1]);
+        const decision = db.prepare("SELECT * FROM decisions WHERE run_id=?").get(runMatch[1]);
+        return json(res, 200, { run: { ...run, executor_result: run.executor_result_json ? JSON.parse(run.executor_result_json) : null }, verification: verification ? { ...verification, report: JSON.parse(verification.report_json) } : null, decision: decision ?? null });
+      }
       if (req.method === "POST" && req.url === "/v1/analyze") {
         const input = await body(req);
         if (!input.text || typeof input.text !== "string") return json(res, 400, { error: "text is required" });
