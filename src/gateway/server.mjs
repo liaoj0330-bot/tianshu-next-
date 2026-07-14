@@ -4,6 +4,7 @@ import { analyzeIntent } from "../intelligence/intent-router.mjs";
 import { classifyOperatingDomain } from "../intelligence/domain-router.mjs";
 import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
 import { createGoal } from "../core/kernel.mjs";
+import { recordMemoryCandidate, addMemoryCounterexample, promoteMemoryCandidate, listMemoryCandidates } from "../memory/promotion.mjs";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -73,6 +74,18 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
         };
         return json(res, 201, { goal_id: createGoal(db, contract), status: "contracted", contract, analysis });
       }
+      if (req.method === "POST" && req.url === "/v1/memory/candidates") {
+        const input = await body(req);
+        return json(res, 201, recordMemoryCandidate(db, input));
+      }
+      const memoryMatch = req.url.match(/^\/v1\/memory\/([^/]+)(?:\/([^/]+))?$/);
+      if (memoryMatch && memoryMatch[2] === "promote" && req.method === "POST") {
+        const input = await body(req); return json(res, 200, promoteMemoryCandidate(db, memoryMatch[1], input.promoted_by ?? "creator"));
+      }
+      if (memoryMatch && memoryMatch[2] === "counterexample" && req.method === "POST") {
+        const input = await body(req); addMemoryCounterexample(db, memoryMatch[1], input.counterexample); return json(res, 200, { status: "recorded" });
+      }
+      if (memoryMatch && !memoryMatch[2] && req.method === "GET") return json(res, 200, { items: listMemoryCandidates(db, memoryMatch[1]) });
       const stateMatch = req.url.match(/^\/v1\/state\/([^/]+)(?:\/([^/]+))?$/);
       if (stateMatch && req.method === "GET") {
         const state = getCurrentState(db, stateMatch[1]);
