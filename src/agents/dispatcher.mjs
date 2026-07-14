@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { newId, now, appendEvent } from "../core/store.mjs";
 import { getAgent } from "./registry.mjs";
 
-function runCommand(command, args, timeoutMs = 15000) {
+function runCommand(command, args, timeoutMs = 15000, cwd = process.cwd()) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true, shell: false });
+    const child = spawn(command, args, { windowsHide: true, shell: false, cwd });
     let stdout = ""; let stderr = ""; let timedOut = false;
     child.stdin.end();
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
@@ -27,7 +27,7 @@ export async function dispatchProbe(db, agentId, jobId = null, timeoutMs = 15000
   return { agent_run_id: runId, agent_id: agentId, status, ...result };
 }
 
-export async function dispatchTextTask(db, agentId, prompt, { jobId = null, timeoutMs = 120000 } = {}) {
+export async function dispatchTextTask(db, agentId, prompt, { jobId = null, timeoutMs = 120000, cwd = process.cwd() } = {}) {
   if (!prompt || typeof prompt !== "string") throw new Error("text task requires a prompt");
   const agent = getAgent(db, agentId); const runId = newId("agent_run"); const started = now();
   db.prepare("INSERT INTO agent_runs VALUES (?, ?, ?, 'text_task', 'running', NULL, '', '', ?, NULL)").run(runId, agentId, jobId, started);
@@ -35,7 +35,7 @@ export async function dispatchTextTask(db, agentId, prompt, { jobId = null, time
   const args = agent.args.includes("__PROMPT__")
     ? agent.args.map((arg) => arg === "__PROMPT__" ? prompt : arg.replaceAll("__PROMPT__", prompt))
     : [...agent.args, prompt];
-  const result = await runCommand(agent.command, args, timeoutMs);
+  const result = await runCommand(agent.command, args, timeoutMs, cwd);
   const status = result.exitCode === 0 && !result.timedOut ? "succeeded" : "failed";
   db.prepare("UPDATE agent_runs SET status=?,exit_code=?,stdout=?,stderr=?,finished_at=? WHERE agent_run_id=?")
     .run(status, result.exitCode, result.stdout, result.stderr, now(), runId);
