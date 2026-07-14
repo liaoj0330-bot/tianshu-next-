@@ -5,6 +5,7 @@ import { classifyOperatingDomain } from "../intelligence/domain-router.mjs";
 import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
 import { createGoal } from "../core/kernel.mjs";
 import { recordMemoryCandidate, addMemoryCounterexample, promoteMemoryCandidate, listMemoryCandidates } from "../memory/promotion.mjs";
+import { extractCreatorSignals } from "../intelligence/creator-signal-extractor.mjs";
 
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -106,6 +107,20 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
       if (stateMatch && stateMatch[2] === "propose" && req.method === "POST") {
         const input = await body(req);
         return json(res, 201, proposeStateUpdate(db, stateMatch[1], input));
+      }
+      if (stateMatch && stateMatch[2] === "propose-from-text" && req.method === "POST") {
+        const input = await body(req);
+        if (!input.text || typeof input.text !== "string") return json(res, 400, { error: "text is required" });
+        const extracted = extractCreatorSignals(input.text);
+        const proposal = proposeStateUpdate(db, stateMatch[1], {
+          observed_at: input.observed_at ?? now(),
+          source_type: "creator_transcript",
+          source_ref: input.source_ref ?? "gateway",
+          signals: extracted.signals,
+          requirements: input.requirements ?? [],
+          next_action: input.next_action ?? (extracted.signals.length ? { title: "确认本轮状态变化", owner: "creator", status: "awaiting_creator_decision" } : null),
+        });
+        return json(res, 201, { ...proposal, extraction: extracted });
       }
       if (stateMatch && stateMatch[2] === "decision" && req.method === "POST") {
         const input = await body(req);
