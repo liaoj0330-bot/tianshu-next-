@@ -26,12 +26,12 @@ async function body(req) {
   try { return JSON.parse(data); } catch { throw new Error("invalid JSON body"); }
 }
 
-export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
+export function createGateway({ db, host = "127.0.0.1", port = 0, health = null } = {}) {
   if (!db) throw new Error("gateway requires SQLite db");
   const server = createServer(async (req, res) => {
     try {
       if (req.method === "GET" && req.url === "/health") {
-        return json(res, 200, { status: "ok", control_plane: "tianshu-orchestrator", state_store: "sqlite" });
+        return json(res, 200, { status: "ok", control_plane: "tianshu-orchestrator", state_store: "sqlite", ...(health ? health() : {}) });
       }
       if (req.method === "GET" && req.url === "/v1/overview") {
         return json(res, 200, {

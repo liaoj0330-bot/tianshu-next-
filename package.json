@@ -1,15 +1,17 @@
 {
-  "name": "tianshu-next",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "engines": {
-    "node": ">=22.5"
-  },
-  "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "real-smoke": "node scripts/real-codex-smoke.mjs",
-    "state-replay": "node scripts/dynamic-state-replay.mjs",
-    "state-live": "node scripts/dynamic-state-live.mjs"
-  }
+    "name":  "tianshu-next",
+    "version":  "0.1.0",
+    "private":  true,
+    "type":  "module",
+    "engines":  {
+                    "node":  "\u003e=22.5"
+                },
+    "scripts":  {
+                    "test":  "node --test --test-concurrency=1 test/*.test.mjs",
+                    "real-smoke":  "node scripts/real-codex-smoke.mjs",
+                    "state-replay":  "node scripts/dynamic-state-replay.mjs",
+                    "state-live":  "node scripts/dynamic-state-live.mjs",
+                    "service":  "node scripts/tianshu-service.mjs",
+                    "health":  "node scripts/health-check.mjs"
+                }
 }

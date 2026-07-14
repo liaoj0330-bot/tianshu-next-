@@ -53,3 +53,15 @@ export function reconcileLeases(db) {
   const expired = db.prepare("SELECT * FROM worker_leases WHERE status='active' AND expires_at <= ?").all(now());
   return tx(db, () => { for (const lease of expired) { db.prepare("UPDATE worker_leases SET status='expired' WHERE lease_id=?").run(lease.lease_id); db.prepare("DELETE FROM project_locks WHERE lease_id=?").run(lease.lease_id); db.prepare("UPDATE jobs SET status='recovery_required',lease_id=NULL,updated_at=? WHERE job_id=? AND status IN ('leased','running')").run(now(), lease.job_id); appendEvent(db,"job",lease.job_id,"job.recovery_required",{lease_id:lease.lease_id}); } return expired.map((x) => x.job_id); });
 }
+export function reconcileOrphanedLeases(db) {
+  const active = db.prepare("SELECT * FROM worker_leases WHERE status='active'").all();
+  return tx(db, () => {
+    for (const lease of active) {
+      db.prepare("UPDATE worker_leases SET status='expired' WHERE lease_id=?").run(lease.lease_id);
+      db.prepare("DELETE FROM project_locks WHERE lease_id=?").run(lease.lease_id);
+      db.prepare("UPDATE jobs SET status='recovery_required',lease_id=NULL,updated_at=? WHERE job_id=? AND status IN ('leased','running','cancel_requested')").run(now(), lease.job_id);
+      appendEvent(db, "job", lease.job_id, "job.recovery_required", { lease_id: lease.lease_id, reason: "service_restart" });
+    }
+    return active.map((item) => item.job_id);
+  });
+}
