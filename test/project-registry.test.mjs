@@ -9,6 +9,8 @@ import { assessProject } from "../src/context/active-assistant.mjs";
 import { loadProjectRegistry, saveProject } from "../src/context/project-store.mjs";
 import { claimJob, enqueueJob, finishJob, reconcileLeases, requestCancel, startJob } from "../src/runtime/governance.mjs";
 import { dispatchProbe, dispatchTextTask } from "../src/agents/dispatcher.mjs";
+import { createGateway } from "../src/gateway/server.mjs";
+import { sendAgentHubIntake } from "../src/gateway/agenthub-adapter.mjs";
 import { listAgents, registerAgent } from "../src/agents/registry.mjs";
 
 function fixture() {
@@ -147,4 +149,18 @@ test("dispatches a text task and records the returned result", async () => {
     assert.equal(result.stdout, "READY-TASK");
     assert.equal(db.prepare("SELECT mode FROM agent_runs ORDER BY started_at DESC LIMIT 1").get().mode, "text_task");
   } finally { db.close(); }
+});
+
+test("routes AgentHub intake through the single Orchestrator gateway", async () => {
+  const f = fixture(); const db = openStore(join(f.root, "gateway.sqlite")); const gateway = createGateway({ db });
+  const address = await gateway.listen();
+  try {
+    const health = await fetch(`http://${address.address}:${address.port}/health`);
+    assert.equal(health.status, 200);
+    assert.deepEqual((await health.json()).state_store, "sqlite");
+    const accepted = await sendAgentHubIntake(`http://${address.address}:${address.port}`, "请判断当前项目下一步", { test: true });
+    assert.equal(accepted.status, "accepted");
+    assert.equal(accepted.routed_to, "tianshu-orchestrator");
+    assert.equal(db.prepare("SELECT source FROM intake_events WHERE intake_id=?").get(accepted.intake_id).source, "agenthub");
+  } finally { await gateway.close(); db.close(); }
 });

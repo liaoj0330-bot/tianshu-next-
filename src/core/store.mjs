@@ -225,6 +225,13 @@ export function openStore(dbPath) {
       started_at TEXT NOT NULL,
       finished_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS intake_events (
+      intake_id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE TRIGGER IF NOT EXISTS goals_contract_immutable
     BEFORE UPDATE OF contract_json, contract_hash ON goals
     BEGIN
