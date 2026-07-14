@@ -243,6 +243,62 @@ export function openStore(dbPath) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS creator_project_profiles (
+      project_key TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      lane TEXT NOT NULL,
+      baseline_priority INTEGER NOT NULL CHECK(baseline_priority BETWEEN 1 AND 5),
+      execution_policy TEXT NOT NULL CHECK(execution_policy IN ('eligible_after_approval','read_only','no_access')),
+      status TEXT NOT NULL CHECK(status IN ('active','waiting','auxiliary','protected')),
+      evidence_json TEXT NOT NULL,
+      source_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS creator_priority_assessments (
+      assessment_id TEXT PRIMARY KEY,
+      project_key TEXT NOT NULL REFERENCES creator_project_profiles(project_key),
+      factors_json TEXT NOT NULL,
+      score REAL NOT NULL,
+      priority_band TEXT NOT NULL CHECK(priority_band IN ('focus_now','important','maintain','defer')),
+      confidence TEXT NOT NULL CHECK(confidence IN ('high','medium','low')),
+      status TEXT NOT NULL CHECK(status IN ('candidate','confirmed','superseded')),
+      source_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      confirmed_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS creator_priority_one_current
+      ON creator_priority_assessments(project_key) WHERE status IN ('candidate','confirmed');
+    CREATE TABLE IF NOT EXISTS plan_candidates (
+      candidate_id TEXT PRIMARY KEY,
+      intake_id TEXT NOT NULL REFERENCES intake_events(intake_id),
+      version INTEGER NOT NULL,
+      candidate_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('awaiting_creator_confirmation','approved','rejected','superseded')),
+      supersedes_id TEXT REFERENCES plan_candidates(candidate_id),
+      revision_note TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(intake_id, version)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS plan_candidates_one_current
+      ON plan_candidates(intake_id) WHERE status='awaiting_creator_confirmation';
+    CREATE TABLE IF NOT EXISTS execution_boundaries (
+      plan_id TEXT PRIMARY KEY REFERENCES plans(plan_id),
+      boundary_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('awaiting_configuration','awaiting_creator_confirmation','approved','rejected')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS intake_confirmations (
+      intake_id TEXT PRIMARY KEY REFERENCES intake_events(intake_id),
+      confirmation_type TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      entity_json TEXT,
+      decided_by TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
     CREATE TRIGGER IF NOT EXISTS goals_contract_immutable
     BEFORE UPDATE OF contract_json, contract_hash ON goals
     BEGIN

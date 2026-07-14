@@ -1,0 +1,14 @@
+import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
+
+function parse(value) { return JSON.parse(value); }
+export function createPlanCandidate(db, intakeId, candidate, { supersedes_id = null, revision_note = null } = {}) {
+  const version = (db.prepare("SELECT MAX(version) version FROM plan_candidates WHERE intake_id=?").get(intakeId).version ?? 0) + 1;
+  const candidateId = newId("plan_candidate"); const stamp = now(); const value = { ...candidate, candidate_id: candidateId, intake_id: intakeId, version, supersedes_id, revision_note, candidate_status: "awaiting_creator_confirmation" };
+  db.prepare("INSERT INTO plan_candidates VALUES (?,?,?,?, 'awaiting_creator_confirmation',?,?,?,?)").run(candidateId, intakeId, version, canonicalJson(value), supersedes_id, revision_note, stamp, stamp);
+  appendEvent(db, "plan_candidate", candidateId, "plan_candidate.created", { intake_id: intakeId, version, supersedes_id });
+  return value;
+}
+export function getCurrentPlanCandidate(db, intakeId) { const row=db.prepare("SELECT * FROM plan_candidates WHERE intake_id=? AND status='awaiting_creator_confirmation'").get(intakeId); return row ? { ...parse(row.candidate_json), status: row.status } : null; }
+export function decidePlanCandidate(db, candidateId, decision) { const row=db.prepare("SELECT * FROM plan_candidates WHERE candidate_id=? AND status='awaiting_creator_confirmation'").get(candidateId); if(!row) throw new Error("plan candidate is not awaiting creator confirmation"); const status=decision==="approve"?"approved":"rejected"; db.prepare("UPDATE plan_candidates SET status=?,updated_at=? WHERE candidate_id=?").run(status,now(),candidateId); appendEvent(db,"plan_candidate",candidateId,`plan_candidate.${status}`,{}); return { ...parse(row.candidate_json), status }; }
+export function revisePlanCandidate(db, candidateId, revisionNote) { if(!revisionNote?.trim()) throw new Error("revision_note is required"); const row=db.prepare("SELECT * FROM plan_candidates WHERE candidate_id=? AND status='awaiting_creator_confirmation'").get(candidateId); if(!row) throw new Error("plan candidate is not awaiting creator confirmation"); const old=parse(row.candidate_json); db.prepare("UPDATE plan_candidates SET status='superseded',updated_at=? WHERE candidate_id=?").run(now(),candidateId); const revised={...old, objective: old.objective, revision_note:revisionNote.trim(), completion_criteria:[...old.completion_criteria,`纳入奈奈修订意见：${revisionNote.trim()}`]}; const next=createPlanCandidate(db,row.intake_id,revised,{supersedes_id:candidateId,revision_note:revisionNote.trim()}); appendEvent(db,"plan_candidate",candidateId,"plan_candidate.superseded",{replacement_id:next.candidate_id}); return next; }
+export function listCurrentPlanCandidates(db) { return db.prepare("SELECT candidate_json FROM plan_candidates WHERE status='awaiting_creator_confirmation' ORDER BY created_at DESC").all().map(row=>parse(row.candidate_json)); }

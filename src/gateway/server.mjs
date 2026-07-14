@@ -3,10 +3,18 @@ import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
 import { analyzeIntent } from "../intelligence/intent-router.mjs";
 import { classifyOperatingDomain } from "../intelligence/domain-router.mjs";
 import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
-import { createGoal } from "../core/kernel.mjs";
+import { createGoal, proposePlan, decideApproval, getPlanHash } from "../core/kernel.mjs";
 import { recordMemoryCandidate, addMemoryCounterexample, promoteMemoryCandidate, listMemoryCandidates } from "../memory/promotion.mjs";
 import { extractCreatorSignals } from "../intelligence/creator-signal-extractor.mjs";
+import { decideIntakeInteraction } from "../intelligence/intake-decision.mjs";
+import { composeGroundedAnswer } from "../intelligence/grounded-answer.mjs";
+import { buildActionPlanCandidate } from "../intelligence/action-plan-candidate.mjs";
+import { buildTodayReadModel, getConfirmationReadModel, humanizeStateDecisionCard } from "../product/today-read-model.mjs";
+import { createPlanCandidate, decidePlanCandidate, getCurrentPlanCandidate, revisePlanCandidate } from "../planning/plan-candidates.mjs";
+import { configureExecutionBoundary, createExecutionBoundary, decideExecutionBoundary, getExecutionBoundary } from "../planning/execution-boundary.mjs";
 
+import { assessCreatorProject, getCreatorPortfolio, upsertCreatorProjectBaseline } from "../creator/project-priority.mjs";
+import { matchCreatorProject } from "../creator/project-match.mjs";
 function json(res, status, body) {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(body));
@@ -46,10 +54,90 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
           subjects: db.prepare("SELECT subject_id, display_name, current_snapshot_id, updated_at FROM state_subjects ORDER BY updated_at DESC").all(),
         });
       }
+      if (req.method === "GET" && req.url === "/v1/today") {
+        return json(res, 200, buildTodayReadModel(db));
+      }
+      if (req.method === "GET" && req.url === "/v1/confirmations") {
+        return json(res, 200, { items: getConfirmationReadModel(db), state_authority: "sqlite" });
+      }
       if (req.method === "GET" && req.url === "/v1/decisions") {
         return json(res, 200, { items: db.prepare(`SELECT d.decision_id, d.run_id, d.decision, d.reason, d.decided_by, d.created_at, v.passed, v.report_json, v.verifier FROM decisions d LEFT JOIN verifications v ON v.run_id=d.run_id ORDER BY d.created_at DESC`).all().map((row) => ({ ...row, report: row.report_json ? JSON.parse(row.report_json) : null })) });
       }
-      const runMatch = req.url.match(/^\/v1\/runs\/([^/]+)$/);
+      if (req.method === "POST" && req.url === "/v1/creator/project-match") {
+        const input = await body(req);
+        return json(res, 200, { ...matchCreatorProject(input.message, getCreatorPortfolio(db)), state_authority: "sqlite" });
+      }
+      if (req.method === "GET" && req.url === "/v1/creator/portfolio") {
+        return json(res, 200, { state_authority: "sqlite", items: getCreatorPortfolio(db) });
+      }
+      if (req.method === "POST" && req.url === "/v1/creator/portfolio/import") {
+        const input = await body(req);
+        return json(res, 201, { project_keys: upsertCreatorProjectBaseline(db, input), state_authority: "sqlite" });
+      }
+      const creatorAssessmentMatch = req.url.match(/^\/v1\/creator\/projects\/([^/]+)\/assessments$/);
+      if (creatorAssessmentMatch && req.method === "POST") {
+        const input = await body(req);
+        return json(res, 201, { ...assessCreatorProject(db, creatorAssessmentMatch[1], input), state_authority: "sqlite" });
+      }
+      const planRevisionMatch = req.url.match(/^\/v1\/plan-candidates\/([^/]+)\/revise$/);
+      if (planRevisionMatch && req.method === "POST") {
+        const input = await body(req);
+        return json(res, 201, { candidate: revisePlanCandidate(db, planRevisionMatch[1], input.revision_note), state_authority: "sqlite" });
+      }
+      const planDecisionMatch = req.url.match(/^\/v1\/intakes\/([^/]+)\/plan-decision$/);
+      if (planDecisionMatch && req.method === "POST") {
+        const input = await body(req);
+        if (!["approve", "reject"].includes(input.decision)) return json(res, 400, { error: "invalid plan decision" });
+        const intake = db.prepare("SELECT * FROM intake_events WHERE intake_id=?").get(planDecisionMatch[1]);
+        if (!intake) return json(res, 404, { error: "intake not found" });
+        if (db.prepare("SELECT 1 FROM intake_confirmations WHERE intake_id=?").get(intake.intake_id)) return json(res, 409, { error: "intake plan already decided" });
+        const payload = JSON.parse(intake.payload_json);
+        const candidate = getCurrentPlanCandidate(db, intake.intake_id);
+        if (!candidate) return json(res, 400, { error: "intake has no current plan candidate" });
+        const stamp = now();
+        db.prepare("INSERT INTO intake_confirmations VALUES (?, 'plan', ?, NULL, ?, ?, ?)").run(intake.intake_id, input.decision, input.decided_by ?? "creator", stamp, stamp);
+        if (input.decision !== "approve") {
+          if (input.decision === "reject") decidePlanCandidate(db, candidate.candidate_id, "reject");
+          appendEvent(db, "intake", intake.intake_id, `intake.plan_${input.decision}d`, { decided_by: input.decided_by ?? "creator" });
+          return json(res, 200, { intake_id: intake.intake_id, status: "rejected", execution_started: false });
+        }
+        const contract = {
+          objective: candidate.objective,
+          completion_criteria: candidate.completion_criteria,
+          original_request: payload.message,
+          real_goal: candidate.objective,
+          success_criteria: candidate.completion_criteria,
+          non_goals: candidate.non_goals,
+          constraints: [...candidate.scope, "未经奈奈最终确认不得完成目标"],
+          required_evidence: candidate.required_evidence,
+          risk_level: candidate.risk_level,
+          operating_domain: payload.analysis?.operating_domain ?? "work",
+          source: `intake:${intake.intake_id}`,
+        };
+        const goalId = createGoal(db, contract);
+        const specification = { action: candidate.objective, allowed_paths: candidate.execution_boundary.allowed_paths, expected_outputs: candidate.completion_criteria, proposed_steps: candidate.proposed_steps, independent_verifier_required: true };
+        const planId = proposePlan(db, goalId, specification, candidate.risk_level);
+        decidePlanCandidate(db, candidate.candidate_id, "approve");
+        createExecutionBoundary(db, planId);
+        const entities = { goal_id: goalId, plan_id: planId, task_id: null };
+        db.prepare("UPDATE intake_confirmations SET entity_json=?,updated_at=? WHERE intake_id=?").run(canonicalJson(entities), now(), intake.intake_id);
+        appendEvent(db, "intake", intake.intake_id, "intake.plan_approved", { ...entities, execution_started: false });
+        return json(res, 200, { intake_id: intake.intake_id, status: "prepared_not_approved", ...entities, execution_started: false, execution_approval_required: true, state_authority: "sqlite" });
+      }
+      const executionBoundaryMatch = req.url.match(/^\/v1\/plans\/([^/]+)\/execution-boundary$/);
+      if (executionBoundaryMatch && req.method === "POST") {
+        const input = await body(req);
+        return json(res, 200, { boundary: configureExecutionBoundary(db, executionBoundaryMatch[1], input), state_authority: "sqlite" });
+      }
+      const executionDecisionMatch = req.url.match(/^\/v1\/plans\/([^/]+)\/execution-decision$/);
+      if (executionDecisionMatch && req.method === "POST") {
+        const input = await body(req); if (!["approve","reject"].includes(input.decision)) return json(res,400,{error:"invalid execution decision"});
+        const boundary = getExecutionBoundary(db, executionDecisionMatch[1]);
+        if (!boundary || boundary.status !== "awaiting_creator_confirmation") return json(res,409,{error:"execution boundary is not awaiting creator confirmation"});
+        const approval = decideApproval(db, executionDecisionMatch[1], input.decision === "approve" ? "approved" : "rejected", getPlanHash(db, executionDecisionMatch[1]), input.decided_by ?? "creator");
+        decideExecutionBoundary(db, executionDecisionMatch[1], input.decision);
+        return json(res,200,{plan_id:executionDecisionMatch[1],status:input.decision === "approve" ? "execution_approved_not_started" : "execution_rejected",task_id:approval.taskId,execution_started:false,state_authority:"sqlite"});
+      }      const runMatch = req.url.match(/^\/v1\/runs\/([^/]+)$/);
       if (runMatch && req.method === "GET") {
         const run = db.prepare("SELECT * FROM runs WHERE run_id=?").get(runMatch[1]);
         if (!run) return json(res, 404, { error: "run not found" });
@@ -98,8 +186,9 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
         const input = await body(req); addMemoryCounterexample(db, memoryMatch[1], input.counterexample); return json(res, 200, { status: "recorded" });
       }
       if (memoryMatch && !memoryMatch[2] && req.method === "GET") return json(res, 200, { items: listMemoryCandidates(db, memoryMatch[1]) });
-      const stateMatch = req.url.match(/^\/v1\/state\/([^/]+)(?:\/([^/]+))?$/);
-      if (stateMatch && req.method === "GET") {
+      const requestUrl = new URL(req.url, "http://localhost");
+      const stateMatch = requestUrl.pathname.match(/^\/v1\/state\/([^/]+)(?:\/([^/]+))?$/);
+      if (stateMatch && req.method === "GET" && !stateMatch[2]) {
         const state = getCurrentState(db, stateMatch[1]);
         if (!state) return json(res, 404, { error: "state subject not found" });
         return json(res, 200, state);
@@ -127,7 +216,7 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
         return json(res, 200, decideStateUpdate(db, input.cycle_id, input.decision, input));
       }
       if (stateMatch && stateMatch[2] === "card" && req.method === "GET") {
-        const cycleId = new URL(req.url, "http://localhost").searchParams.get("cycle_id");
+        const cycleId = requestUrl.searchParams.get("cycle_id");
         if (!cycleId) return json(res, 400, { error: "cycle_id is required" });
         return json(res, 200, buildStateDecisionCard(db, cycleId));
       }
@@ -141,9 +230,61 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
         const intakeId = newId("intake");
         const rawAnalysis = analyzeIntent(input.message);
         const analysis = { ...rawAnalysis, operating_domain: classifyOperatingDomain(rawAnalysis) };
-        db.prepare("INSERT INTO intake_events VALUES (?, ?, ?, 'accepted', ?)").run(intakeId, input.source ?? "unknown", canonicalJson({ message: input.message, metadata: input.metadata ?? {}, analysis }), now());
-        appendEvent(db, "intake", intakeId, "intake.accepted", { source: input.source ?? "unknown" });
-        return json(res, 202, { intake_id: intakeId, status: "accepted", routed_to: "tianshu-orchestrator", state_authority: "sqlite", next: "goal_manager", analysis });
+        const interaction = decideIntakeInteraction(input.message, analysis);
+        if (interaction.mode === "direct_answer") {
+          const answer = composeGroundedAnswer(db, input.message, { subject_id: input.metadata?.subject_id ?? "creator" });
+          interaction.answer = answer;
+          interaction.completed = answer.completed;
+          interaction.fulfillment_status = answer.completed ? "answered" : "awaiting_user_input";
+          if (answer.question) interaction.question = answer.question;
+        }
+        if (["action_proposal", "dispatch_request"].includes(interaction.mode)) {
+          const projectMatch = matchCreatorProject(input.message, getCreatorPortfolio(db));
+          if (projectMatch.status === "blocked") {
+            interaction.fulfillment_status = "blocked_by_project_policy";
+            interaction.question = "该项目禁止访问。你是否要改为天枢正式允许的项目？";
+          } else {
+            interaction.plan_candidate = buildActionPlanCandidate(input.message, interaction, { project_match: projectMatch });
+            interaction.fulfillment_status = "awaiting_creator_confirmation";
+            interaction.next_action = "confirm_plan_candidate";
+          }
+        }
+        if (interaction.mode === "state_candidate") {
+          const subjectId = input.metadata?.subject_id ?? "creator";
+          const subjectExists = Boolean(db.prepare("SELECT 1 FROM state_subjects WHERE subject_id=?").get(subjectId));
+          const extraction = extractCreatorSignals(input.message);
+          if (subjectExists && extraction.signals.length) {
+            const proposal = proposeStateUpdate(db, subjectId, {
+              observed_at: input.observed_at ?? now(),
+              source_type: "creator_intake",
+              source_ref: intakeId,
+              signals: extraction.signals,
+              requirements: [],
+              candidate_actions: [],
+            });
+            proposal.decision_card = humanizeStateDecisionCard(proposal.decision_card);
+            interaction.fulfillment_status = "awaiting_creator_decision";
+            interaction.next_action = "confirm_state_proposal";
+            interaction.state_candidate = { status: "proposal_created", subject_id: subjectId, ...proposal, extraction };
+          } else {
+            const followUp = extraction.questions[0]?.question_text ?? "这条变化会影响哪个项目、决定或时间安排？";
+            interaction.fulfillment_status = "awaiting_user_input";
+            interaction.question = followUp;
+            interaction.next_action = "clarify_state_change";
+            interaction.state_candidate = {
+              status: subjectExists ? "no_structured_signal" : "state_subject_missing",
+              subject_id: subjectId,
+              extraction,
+            };
+          }
+        }
+        db.prepare("INSERT INTO intake_events VALUES (?, ?, ?, 'accepted', ?)").run(intakeId, input.source ?? "unknown", canonicalJson({ message: input.message, metadata: input.metadata ?? {}, analysis, interaction }), now());
+        if (interaction.plan_candidate) {
+          interaction.plan_candidate = createPlanCandidate(db, intakeId, interaction.plan_candidate);
+          db.prepare("UPDATE intake_events SET payload_json=? WHERE intake_id=?").run(canonicalJson({ message: input.message, metadata: input.metadata ?? {}, analysis, interaction }), intakeId);
+        }
+        appendEvent(db, "intake", intakeId, "intake.accepted", { source: input.source ?? "unknown", interaction_mode: interaction.mode });
+        return json(res, 202, { intake_id: intakeId, status: "accepted", routed_to: "tianshu-orchestrator", state_authority: "sqlite", next: interaction.next_action ?? interaction.mode, interaction, analysis });
       }
       if (req.method === "POST" && req.url === "/v1/device/events") {
         const input = await body(req);
@@ -157,7 +298,11 @@ export function createGateway({ db, host = "127.0.0.1", port = 0, health = null 
         return json(res, 202, { event_id: eventId, status: "accepted", routed_to: "tianshu-orchestrator", analysis });
       }
       if (req.method === "GET" && req.url === "/v1/intakes") {
-        return json(res, 200, { items: db.prepare("SELECT intake_id, source, status, created_at FROM intake_events ORDER BY created_at DESC").all() });
+        const items = db.prepare("SELECT intake_id, source, payload_json, status, created_at FROM intake_events ORDER BY created_at DESC").all().map((row) => {
+          const payload = JSON.parse(row.payload_json);
+          return { intake_id: row.intake_id, source: row.source, status: row.status, created_at: row.created_at, message: payload.message ?? null, interaction: payload.interaction ?? null };
+        });
+        return json(res, 200, { items });
       }
       return json(res, 404, { error: "not_found" });
     } catch (error) { return json(res, 400, { error: error.message }); }
