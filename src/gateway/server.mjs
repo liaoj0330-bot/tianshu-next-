@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
 import { analyzeIntent } from "../intelligence/intent-router.mjs";
+import { classifyOperatingDomain } from "../intelligence/domain-router.mjs";
 import { createStateSubject, proposeStateUpdate, decideStateUpdate, getCurrentState, buildStateDecisionCard } from "../state/dynamic-state.mjs";
 
 function json(res, status, body) {
@@ -45,7 +46,8 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
       if (req.method === "POST" && req.url === "/v1/analyze") {
         const input = await body(req);
         if (!input.text || typeof input.text !== "string") return json(res, 400, { error: "text is required" });
-        return json(res, 200, { analysis: analyzeIntent(input.text), routed_to: "goal_manager" });
+        const analysis = analyzeIntent(input.text);
+        return json(res, 200, { analysis: { ...analysis, operating_domain: classifyOperatingDomain(analysis) }, routed_to: "goal_manager" });
       }
       if (req.method === "POST" && req.url === "/v1/state/subjects") {
         const input = await body(req);
@@ -78,7 +80,8 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
         const input = await body(req);
         if (!input.message || typeof input.message !== "string") return json(res, 400, { error: "message is required" });
         const intakeId = newId("intake");
-        const analysis = analyzeIntent(input.message);
+        const rawAnalysis = analyzeIntent(input.message);
+        const analysis = { ...rawAnalysis, operating_domain: classifyOperatingDomain(rawAnalysis) };
         db.prepare("INSERT INTO intake_events VALUES (?, ?, ?, 'accepted', ?)").run(intakeId, input.source ?? "unknown", canonicalJson({ message: input.message, metadata: input.metadata ?? {}, analysis }), now());
         appendEvent(db, "intake", intakeId, "intake.accepted", { source: input.source ?? "unknown" });
         return json(res, 202, { intake_id: intakeId, status: "accepted", routed_to: "tianshu-orchestrator", state_authority: "sqlite", next: "goal_manager", analysis });
