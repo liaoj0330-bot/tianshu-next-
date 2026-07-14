@@ -59,6 +59,8 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
         if (!input.original_request || typeof input.original_request !== "string") return json(res, 400, { error: "original_request is required" });
         const analysis = analyzeIntent(input.original_request);
         const contract = {
+          objective: input.real_goal ?? input.original_request,
+          completion_criteria: input.success_criteria ?? [],
           original_request: input.original_request,
           real_goal: input.real_goal ?? input.original_request,
           success_criteria: input.success_criteria ?? [],
@@ -69,7 +71,7 @@ export function createGateway({ db, host = "127.0.0.1", port = 0 } = {}) {
           operating_domain: classifyOperatingDomain(analysis),
           source: input.source ?? "gateway",
         };
-        return json(res, 201, { ...createGoal(db, contract), analysis });
+        return json(res, 201, { goal_id: createGoal(db, contract), status: "contracted", contract, analysis });
       }
       const stateMatch = req.url.match(/^\/v1\/state\/([^/]+)(?:\/([^/]+))?$/);
       if (stateMatch && req.method === "GET") {
