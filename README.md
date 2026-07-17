@@ -14,6 +14,20 @@
 
 **从一次对话到长期系统，不让聊天记录成为第二套真相。** SQLite 保存正式状态；界面、Markdown 和镜像只负责呈现与追溯。
 
+## 真实界面
+
+### 手机：把一批材料交给天枢
+
+<img src="docs/assets/agenthub-mobile-entry.png" alt="AgentHub 手机材料入口：一次交材料、天枢整理、确认关键问题" width="360" />
+
+### 手机：项目建设进度与材料证据分开显示
+
+<img src="docs/assets/agenthub-mobile-project-workspace.png" alt="AI 量化系统手机项目工作台：建设进度、材料、当前阶段、下一步和里程碑" width="360" />
+
+### 桌面：项目组合与优先级
+
+![AgentHub 桌面项目组合](docs/assets/agenthub-desktop-projects.png)
+
 ## 核心能力
 
 ### 告诉你今天最值得推进什么
