@@ -24,10 +24,6 @@
 
 <img src="docs/assets/agenthub-mobile-project-workspace.png" alt="AI 量化系统手机项目工作台：建设进度、材料、当前阶段、下一步和里程碑" width="360" />
 
-### 桌面：项目组合与优先级
-
-![AgentHub 桌面项目组合](docs/assets/agenthub-desktop-projects.png)
-
 ## 核心能力
 
 ### 告诉你今天最值得推进什么
