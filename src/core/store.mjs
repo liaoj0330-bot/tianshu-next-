@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { applyMigrations } from "./migrations.mjs";
 
 export const now = () => new Date().toISOString();
 export const newId = (prefix) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 20)}`;
@@ -494,6 +495,7 @@ export function openStore(dbPath) {
   if (legacyLeaseConstraint) {
     db.exec("PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE; ALTER TABLE worker_leases RENAME TO worker_leases_legacy; CREATE TABLE worker_leases (lease_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), worker_id TEXT NOT NULL, expires_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','expired','released')), created_at TEXT NOT NULL); INSERT INTO worker_leases SELECT * FROM worker_leases_legacy; DROP TABLE worker_leases_legacy; COMMIT; PRAGMA foreign_keys = ON;");
   }
+  applyMigrations(db);
   return db;
 }
 

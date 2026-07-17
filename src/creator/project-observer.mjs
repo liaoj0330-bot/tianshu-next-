@@ -46,7 +46,7 @@ export function captureVerifiedRunProjectChange(db, runId) {
     change_type: "progress",
     summary: row.passed ? "Agent执行结果已通过独立复核" : "Agent执行结果未通过独立复核",
     proposed_value: { run_id: runId, verification_passed: Boolean(row.passed), run_status: row.status },
-    impact: ["这是执行证据，不会自动把项目标记为完成", "需要奈奈确认它对项目进度的含义"],
+    impact: ["这是执行证据，不会自动把项目标记为完成", "需要用户确认它对项目进度的含义"],
     source: { kind: "verified_agent_run", reference: runId },
     evidence: [{ kind: "verification", verifier: row.verifier }],
     confidence: "high"

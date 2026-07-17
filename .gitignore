@@ -11,3 +11,13 @@ node_modules/
 *.sqlite-wal
 *.log
 .tianshu-runtime/
+.runtime/
+.creator-project-test-runtime/
+.dynamic-state-test-runtime/
+.executor-test-runtime/
+.p5-runtime/
+.phase6-runtime/
+.real-smoke/
+.test-runtime/
+.agents/
+acceptance/

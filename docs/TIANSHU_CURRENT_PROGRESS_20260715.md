@@ -1,16 +1,16 @@
 # TianShu Current Progress Baseline
 
-Updated: 2026-07-15
-Status: runtime-verified
+Updated: 2026-07-17
+Status: mobile-and-runtime-verified
 State authority: SQLite
 
 ## Current assessment
 
 TianShu's engineering control plane is substantially in place. The P1-P4
-foundations are implemented, and the core P5 governance mechanisms are
-available. The control plane is approximately 85% complete. The complete
-end-user product is approximately 70%-75% complete and must not yet be
-described as production-finished.
+foundations are implemented, the core P5 governance mechanisms are
+available, and AgentHub now provides the mobile-first product entry. The
+control plane is approximately 85% complete. The complete end-user product is
+approximately 75% complete and must not yet be described as production-finished.
 
 ## Verified capabilities
 
@@ -30,30 +30,34 @@ described as production-finished.
 - The unified knowledge index connects projects, goals, plans, tasks, runs,
   agents, aliases, sources, evidence, temporal validity, and explicit
   relations while filtering protected entities.
-- AgentHub can present the Today model, intake decisions, approval boundaries,
-  and creator decision candidates through the TianShu gateway.
+- AgentHub provides a mobile-first material entry, one decisive follow-up
+  question, project workspaces, explicit progress semantics, approval
+  boundaries, and creator decision candidates through the TianShu gateway.
 
 ## Runtime evidence
 
-The 2026-07-15 local verification produced the following evidence:
+The 2026-07-17 local verification produced the following evidence:
 
-- Full automated suite: **89/89 passed**.
+- Full automated suite: **137/137 passed**.
 - Service health: `status=ok` and `state_store=sqlite`.
 - Worker supervisor: online, with bounded concurrency of 2.
 - Latest backup: present with a recorded SHA-256 manifest.
 - Unified index: 14 entities, 19 aliases, 13 sources, 14 evidence records,
   6 relations, 100% alias coverage, and 0 current evidence conflicts.
-- One isolated Claude executor to Hermes independent-review run passed its
-  structured verification and is waiting for creator acceptance.
+- Three bounded runs have been independently reviewed and accepted by the
+  creator; Claude executes and Hermes independently verifies the accepted path.
+- The 390px mobile layout and 1440px desktop project layout were checked with
+  no horizontal overflow. AI quant is displayed as 0% build progress with 11
+  materials; crystal DIY is displayed as 0% build progress with one image.
 
 ## Remaining gates
 
 - Complete repeated real code-task trials across executor and independent
   verifier combinations, including failure and recovery cases.
-- Present run progress, failure, cancellation, timeout, retry, verification
-  evidence, and final creator decisions completely in AgentHub.
-- Restart the formal service on each accepted release and validate real project
-  Git-change delivery through AgentHub.
+- Continue validating AgentHub with repeated real material batches, including
+  corrections, rejected plans, failure recovery, and final creator decisions.
+- Add identity, network protection, backup recovery drills, and monitoring
+  before describing a deployment as a public production service.
 - Connect Feishu task, calendar, and meeting events through governed intake.
 - Run a sustained pilot covering continuous observation, daily turn closure,
   recovery, and evidence writeback.

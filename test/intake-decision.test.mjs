@@ -2,11 +2,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decideIntakeInteraction } from "../src/intelligence/intake-decision.mjs";
 
-test("bare materials ask one question instead of becoming a task type", () => {
+test("bare materials become a project discovery intake instead of pushing intent back to creator", () => {
   const result = decideIntakeInteraction("https://example.com/reference", { confidence: "low" });
-  assert.equal(result.mode, "ask_one_question");
-  assert.equal(result.question, "你希望我用这份材料完成什么？");
+  assert.equal(result.mode, "project_intake");
+  assert.equal(result.next_action, "prepare_project_alignment");
+  assert.equal(result.approval_required, true);
   assert.equal(result.execution_allowed, false);
+});
+
+test("a bundle of links is organized before creator alignment", () => {
+  const result = decideIntakeInteraction("资料一 https://example.com/a\n资料二 https://example.com/b", { confidence: "low" });
+  assert.equal(result.mode, "project_intake");
+  assert.deepEqual(result.reason_codes, ["material_bundle", "project_discovery_required"]);
 });
 
 test("possible changes become candidates and never overwrite state directly", () => {

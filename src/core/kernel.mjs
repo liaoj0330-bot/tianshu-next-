@@ -6,6 +6,7 @@ import {
   now,
   sha256,
 } from "./store.mjs";
+import { assertAuthority } from "../governance/authority.mjs";
 
 const RUN_TRANSITIONS = {
   running: ["awaiting_verification", "recovery_required"],
@@ -77,6 +78,7 @@ export function proposePlan(db, goalId, specification, riskLevel = "L1") {
 
 export function decideApproval(db, planId, decision, suppliedPlanHash, decidedBy = "creator") {
   if (!["approved", "rejected"].includes(decision)) throw new Error("invalid approval decision");
+  const actor = assertAuthority(db, decidedBy, "execution.approve");
   const plan = getOne(db, "plans", "plan_id", planId);
   requireStatus(plan, ["awaiting_approval"], "plan");
   if (plan.plan_hash !== suppliedPlanHash) throw new Error("approval plan hash mismatch");
@@ -85,7 +87,7 @@ export function decideApproval(db, planId, decision, suppliedPlanHash, decidedBy
   const timestamp = now();
   transaction(db, () => {
     db.prepare(`INSERT INTO approvals VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(approvalId, planId, plan.plan_hash, decision, decidedBy, timestamp);
+      .run(approvalId, planId, plan.plan_hash, decision, actor, timestamp);
     db.prepare(`UPDATE plans SET status = ?, updated_at = ? WHERE plan_id = ?`)
       .run(decision, timestamp, planId);
     appendEvent(db, "approval", approvalId, `approval.${decision}`, { bound_plan_hash: plan.plan_hash });
@@ -154,6 +156,7 @@ export function verifyRun(db, runId, passed, report, verifier = "independent_ver
 
 export function decideRun(db, runId, decision, reason, decidedBy = "creator") {
   if (!["accept", "reject"].includes(decision)) throw new Error("invalid creator decision");
+  const actor = assertAuthority(db, decidedBy, "goal.final_accept");
   const run = getOne(db, "runs", "run_id", runId);
   const task = getOne(db, "tasks", "task_id", run.task_id);
   const plan = getOne(db, "plans", "plan_id", task.plan_id);
@@ -168,8 +171,8 @@ export function decideRun(db, runId, decision, reason, decidedBy = "creator") {
   const timestamp = now();
   transaction(db, () => {
     db.prepare(`INSERT INTO decisions VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(decisionId, runId, decision, reason, decidedBy, timestamp);
-    transitionRun(db, run, finalRunStatus, { decision_id: decisionId, decided_by: decidedBy });
+      .run(decisionId, runId, decision, reason, actor, timestamp);
+    transitionRun(db, run, finalRunStatus, { decision_id: decisionId, decided_by: actor });
     db.prepare(`UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?`)
       .run(finalGoalStatus, timestamp, task.task_id);
     db.prepare(`UPDATE goals SET status = ?, updated_at = ? WHERE goal_id = ?`)

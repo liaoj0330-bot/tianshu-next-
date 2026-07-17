@@ -17,7 +17,7 @@ export function matchCreatorProject(message, portfolio) {
       execution_allowed: false,
       confidence: matches.length > 1 ? "low" : "none",
       candidates: matches.map(({ project_key, display_name }) => ({ project_key, display_name })),
-      reason: matches.length > 1 ? "多个 SQLite 项目档案被明确提及，需要奈奈确认归属。" : "未找到项目键或正式项目名的明确证据，不进行关键词猜测。",
+      reason: matches.length > 1 ? "多个 SQLite 项目档案被明确提及，需要用户确认归属。" : "未找到项目键或正式项目名的明确证据，不进行关键词猜测。",
     };
   }
   const project = matches[0];

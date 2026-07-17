@@ -11,6 +11,7 @@ import { openStore, sha256 } from "../src/core/store.mjs";
 import { enqueueJob } from "../src/runtime/governance.mjs";
 import { createGoal, decideApproval, getPlanHash, proposePlan, startRun } from "../src/core/kernel.mjs";
 import { createTianShuService } from "../src/app/service.mjs";
+import { createReminderAutomation } from "../src/automation/reminders.mjs";
 
 const temp = () => mkdtempSync(join(tmpdir(), "tianshu-m0-"));
 const waitFor = async (fn, timeout = 3000) => {
@@ -93,4 +94,21 @@ test("service startup reconciles interrupted runs and orphaned job leases", asyn
   assert.equal(service.db.prepare("SELECT status FROM jobs WHERE job_id=?").get(jobId).status, "recovery_required");
   await service.stop();
   assert.equal(existsSync(config.lockPath), false);
+});
+
+test("service scheduler materializes a due reminder exactly once", async () => {
+  const root = temp();
+  const config = { ...resolveRuntimeConfig({ cwd: root, env: { TIANSHU_AUTOMATION_INTERVAL_MS: "10" } }), port: 0 };
+  const seed = openStore(config.statePath);
+  createReminderAutomation(seed, { title: "恢复后仍会触发", schedule_kind: "once", next_run_at: "2020-01-01T00:00:00.000Z" });
+  seed.close();
+  const service = await createTianShuService(config, { backupOnStart: false, startWorkers: false });
+  try {
+    await waitFor(() => service.db.prepare("SELECT COUNT(*) count FROM automation_occurrences").get().count === 1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(service.db.prepare("SELECT COUNT(*) count FROM automation_occurrences").get().count, 1);
+    const health = await fetch("http://" + service.address.address + ":" + service.address.port + "/health").then((response) => response.json());
+    assert.ok(health.automation.last_scan_at);
+    assert.equal(health.automation.last_error, null);
+  } finally { await service.stop(); }
 });

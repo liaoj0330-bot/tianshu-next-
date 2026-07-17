@@ -27,7 +27,7 @@ export function composeGroundedAnswer(db, message, { subject_id = "creator" } = 
       energy === "low" ? "正式状态显示当前精力偏低，因此判断加入了降低并行度的约束。" : "当前没有已确认的低精力约束。",
       "受保护或 no_access 项目已排除在建议执行范围之外。",
     ],
-    uncertainty: top.assessment_status === "confirmed" ? [] : ["项目分数仍是候选判断，奈奈尚未最终确认。"],
+    uncertainty: top.assessment_status === "confirmed" ? [] : ["项目分数仍是候选判断，用户尚未最终确认。"],
     next_action: `先明确「${top.display_name}」今天唯一需要交付的结果；如需执行，再形成计划卡。`,
     requires_confirmation: false,
     evidence: [

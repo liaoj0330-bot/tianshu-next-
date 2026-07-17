@@ -1,4 +1,4 @@
-const BARE_MATERIAL = /^\s*(https?:\/\/\S+|[a-zA-Z]:\\[^\r\n]+|\/[^\r\n]+)\s*$/;
+import { containsMaterial } from "./material-intake.mjs";
 
 const HIGH_RISK_ACTION = /(发消息|发送|发布|对外|删除|付款|支付|创建任务|派发|调度\s*agent|修改文件|写入正式记忆)/i;
 const ACTION_REQUEST = /(帮我|请你|需要你|开始|继续|完成|生成|修复|创建|安排|执行|推进|调度|派发|验收)/i;
@@ -22,13 +22,17 @@ export function decideIntakeInteraction(message, analysis = {}) {
   const text = String(message ?? "").trim();
   if (!text) throw new Error("message is required");
 
-  if (BARE_MATERIAL.test(text)) {
-    return base("ask_one_question", {
-      fulfillment_status: "awaiting_user_input",
+  const materialInput = containsMaterial(text);
+  const explicitInstruction = /^(请你|请|帮我|需要你|开始|继续|完成|生成|修复|创建|安排|执行|推进|调度|派发|验收)/i.test(text);
+
+  if (materialInput && !explicitInstruction) {
+    return base("project_intake", {
+      fulfillment_status: "organizing_materials",
       confidence: "high",
-      reason_codes: ["bare_material_without_intent"],
-      question: "你希望我用这份材料完成什么？",
-      summary: "目前只有材料，还不能确定要回答、判断、保存还是执行。",
+      approval_required: true,
+      reason_codes: ["material_bundle", "project_discovery_required"],
+      summary: "已识别为项目线索素材；先整理、核验和形成首轮判断，再请你决定是否推进。",
+      next_action: "prepare_project_alignment",
     });
   }
 

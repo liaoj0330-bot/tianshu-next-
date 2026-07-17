@@ -3,7 +3,7 @@ import { dispatchTextTask } from "../agents/dispatcher.mjs";
 import { canonicalJson, sha256 } from "../core/store.mjs";
 import { captureVerifiedRunProjectChange } from "../creator/project-observer.mjs";
 
-export function prepareManagedTask(db, { contract, plan, riskLevel = "L1", autoApprove = false, decidedBy = "orchestrator" }) {
+export function prepareManagedTask(db, { contract, plan, riskLevel = "L1", autoApprove = false, decidedBy = "creator" }) {
   const goalId = createGoal(db, contract);
   const planId = proposePlan(db, goalId, plan, riskLevel);
   const result = { goalId, planId, taskId: null, approvalId: null };

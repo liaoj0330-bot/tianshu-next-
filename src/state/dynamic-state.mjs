@@ -7,6 +7,7 @@ import {
   newId,
   now,
 } from "../core/store.mjs";
+import { assertAuthority } from "../governance/authority.mjs";
 
 const STATE_LAYERS = new Set(["stable", "current", "future"]);
 const FORBIDDEN_PATH_PARTS = new Set(["__proto__", "constructor", "prototype"]);
@@ -316,6 +317,7 @@ export function decideStateUpdate(db, cycleId, decision, {
   if (!new Set(["accept", "correct", "reject"]).has(decision)) {
     throw new Error("invalid state update decision");
   }
+  const actor = assertAuthority(db, decided_by, "formal_state.confirm");
   const cycle = getOne(db, "state_update_cycles", "cycle_id", cycleId);
   if (!cycle || cycle.status !== "awaiting_creator_decision") {
     throw new Error("state update cycle is not awaiting creator decision");
@@ -327,7 +329,7 @@ export function decideStateUpdate(db, cycleId, decision, {
         SET status = 'rejected', decision_reason = ?, updated_at = ?
         WHERE cycle_id = ?
       `).run(reason, now(), cycleId);
-      appendEvent(db, "state_cycle", cycleId, "state_cycle.rejected", { decided_by, reason });
+      appendEvent(db, "state_cycle", cycleId, "state_cycle.rejected", { decided_by: actor, reason });
     });
     return { cycle_id: cycleId, snapshot_id: null, status: "rejected" };
   }
@@ -361,7 +363,7 @@ export function decideStateUpdate(db, cycleId, decision, {
         cycle.subject_id,
         base.version + 1,
         canonicalJson(nextState),
-        canonicalJson({ type: decision === "correct" ? "creator_correction" : "accepted_proposal", decided_by }),
+        canonicalJson({ type: decision === "correct" ? "creator_correction" : "accepted_proposal", decided_by: actor }),
         cycleId,
         timestamp,
       );
@@ -375,7 +377,7 @@ export function decideStateUpdate(db, cycleId, decision, {
       WHERE cycle_id = ?
     `).run(decision === "correct" ? "corrected" : "accepted", snapshotId, reason, timestamp, cycleId);
     appendEvent(db, "state_cycle", cycleId, `state_cycle.${decision === "correct" ? "corrected" : "accepted"}`, {
-      decided_by,
+      decided_by: actor,
       snapshot_id: snapshotId,
       state_changed: stateChanged,
     });
@@ -388,6 +390,7 @@ export function decideStateUpdate(db, cycleId, decision, {
 }
 
 export function answerStateQuestion(db, subjectId, questionKey, answer, answeredBy = "creator") {
+  const actor = assertAuthority(db, answeredBy, "formal_state.confirm");
   const question = db.prepare(`
     SELECT * FROM state_questions WHERE subject_id = ? AND question_key = ?
   `).get(subjectId, questionKey);
@@ -398,11 +401,11 @@ export function answerStateQuestion(db, subjectId, questionKey, answer, answered
       UPDATE state_questions
       SET status = 'answered', answer_json = ?, answered_at = ?
       WHERE question_id = ?
-    `).run(canonicalJson({ answer, answered_by: answeredBy }), timestamp, question.question_id);
+    `).run(canonicalJson({ answer, answered_by: actor }), timestamp, question.question_id);
     appendEvent(db, "state_question", question.question_id, "state_question.answered", {
       subject_id: subjectId,
       question_key: questionKey,
-      answered_by: answeredBy,
+      answered_by: actor,
     });
   });
 }
@@ -516,7 +519,7 @@ export function renderStateDecisionCardMarkdown(db, cycleId, outputPath) {
     `## 需要确认\n\n${questions}\n\n` +
     `## 唯一下一步\n\n${card.next_action.text}\n\n` +
     `原因：${card.next_action.reason}\n\n` +
-    `## 奈奈决策\n\n- 接受\n- 纠正\n- 拒绝\n`;
+    `## 用户决策\n\n- 接受\n- 纠正\n- 拒绝\n`;
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, content, "utf8");
   return outputPath;

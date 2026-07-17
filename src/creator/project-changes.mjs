@@ -1,5 +1,6 @@
 import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
 import { indexProjectChange, updateIndexedProjectChangeDecision } from "../indexing/knowledge-index.mjs";
+import { assertAuthority } from "../governance/authority.mjs";
 
 const TYPES = new Set(["stage", "progress", "risk", "deadline", "priority", "status", "note"]);
 const CONFIDENCE = new Set(["high", "medium", "low"]);
@@ -46,18 +47,19 @@ export function proposeProjectChange(db, projectKey, input = {}) {
 
 export function decideProjectChange(db, changeId, { decision, decided_by = "creator", reason = "" } = {}) {
   if (!["accept", "reject"].includes(decision)) throw new Error("decision must be accept or reject");
+  const actor = assertAuthority(db, decided_by, "formal_state.confirm");
   return atomic(db, () => {
     const row = db.prepare("SELECT * FROM project_change_candidates WHERE change_id=? AND status='awaiting_creator_confirmation'").get(changeId);
     if (!row) throw new Error("project change is not awaiting creator confirmation");
     const status = decision === "accept" ? "accepted" : "rejected", stamp = now();
-    db.prepare("UPDATE project_change_candidates SET status=?,decided_at=?,decided_by=?,decision_reason=? WHERE change_id=?").run(status, stamp, decided_by, reason, changeId);
+    db.prepare("UPDATE project_change_candidates SET status=?,decided_at=?,decided_by=?,decision_reason=? WHERE change_id=?").run(status, stamp, actor, reason, changeId);
     if (status === "accepted") {
       db.prepare("INSERT INTO project_current_state(project_key,state_key,value_json,source_change_id,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(project_key,state_key) DO UPDATE SET value_json=excluded.value_json,source_change_id=excluded.source_change_id,updated_at=excluded.updated_at").run(row.project_key, row.change_type, row.proposed_json, changeId, stamp);
       const superseded = db.prepare("SELECT change_id FROM project_change_candidates WHERE project_key=? AND change_type=? AND status='awaiting_creator_confirmation'").all(row.project_key, row.change_type);
-      db.prepare("UPDATE project_change_candidates SET status='superseded',decided_at=?,decided_by=?,decision_reason=? WHERE project_key=? AND change_type=? AND status='awaiting_creator_confirmation'").run(stamp, decided_by, "conflicting change superseded by " + changeId, row.project_key, row.change_type);
-      for (const item of superseded) appendEvent(db, "project_change", item.change_id, "project_change.superseded", { accepted_change_id: changeId, decided_by });
+      db.prepare("UPDATE project_change_candidates SET status='superseded',decided_at=?,decided_by=?,decision_reason=? WHERE project_key=? AND change_type=? AND status='awaiting_creator_confirmation'").run(stamp, actor, "conflicting change superseded by " + changeId, row.project_key, row.change_type);
+      for (const item of superseded) appendEvent(db, "project_change", item.change_id, "project_change.superseded", { accepted_change_id: changeId, decided_by: actor });
     }
-    appendEvent(db, "project_change", changeId, "project_change." + status, { project_key: row.project_key, decided_by });
+    appendEvent(db, "project_change", changeId, "project_change." + status, { project_key: row.project_key, decided_by: actor });
     updateIndexedProjectChangeDecision(db, changeId);
     if (status === "accepted") for (const item of db.prepare("SELECT change_id FROM project_change_candidates WHERE project_key=? AND change_type=? AND status='superseded'").all(row.project_key,row.change_type)) updateIndexedProjectChangeDecision(db,item.change_id);
     return getProjectChange(db, changeId);

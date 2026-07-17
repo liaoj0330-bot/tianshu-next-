@@ -30,6 +30,21 @@ test("real user question returns a grounded answer instead of a route label", as
   assert.ok(result.interaction.answer.evidence.length >= 2);
 }));
 
+test("messy project materials become an evidence-bounded alignment card", async () => withJourney(async ({ db, base }) => {
+  const message = "客户的 AI 量化资料\n收益 60%+ https://v.douyin.com/a/\n幸存者偏差 https://v.douyin.com/b/";
+  const intake = await (await post(base, "/v1/intake", { source: "agenthub-dev", message })).json();
+  assert.equal(intake.interaction.mode, "project_intake");
+  assert.equal(intake.interaction.fulfillment_status, "awaiting_creator_confirmation");
+  assert.equal(intake.interaction.project_brief.title, "AI 量化系统");
+  assert.equal(intake.interaction.plan_candidate.project_brief.unverified_claims[0].status, "unverified");
+  assert.match(intake.interaction.plan_candidate.alignment_summary, /首轮只读调研/);
+  assert.equal(db.prepare("SELECT COUNT(*) count FROM tasks").get().count, 0);
+  const today = await fetch(base + "/v1/today").then((response) => response.json());
+  const card = today.confirmations.find((item) => item.confirmation_id === intake.interaction.plan_candidate.candidate_id);
+  assert.equal(card.result.interaction.mode, "project_alignment");
+  assert.match(card.effects.join(" "), /不会立即开发/);
+}));
+
 test("action creates no task until creator confirms the visible candidate", async () => withJourney(async ({ db, base }) => {
   const intake = await (await post(base, "/v1/intake", { source: "agenthub-dev", message: "帮我整理今天三个项目的优先级，并给出每个判断的证据" })).json();
   assert.equal(intake.interaction.mode, "action_proposal");

@@ -26,5 +26,6 @@ export function resolveRuntimeConfig({ env = process.env, cwd = process.cwd() } 
     leaseMs: positiveInteger(env.TIANSHU_LEASE_MS, 30000, "TIANSHU_LEASE_MS"),
     backupIntervalMs: positiveInteger(env.TIANSHU_BACKUP_INTERVAL_MS, 86400000, "TIANSHU_BACKUP_INTERVAL_MS"),
     backupRetention: positiveInteger(env.TIANSHU_BACKUP_RETENTION, 14, "TIANSHU_BACKUP_RETENTION"),
+    automationIntervalMs: positiveInteger(env.TIANSHU_AUTOMATION_INTERVAL_MS, 1000, "TIANSHU_AUTOMATION_INTERVAL_MS"),
   });
 }

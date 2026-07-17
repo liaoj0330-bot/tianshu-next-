@@ -12,6 +12,9 @@
                     "state-replay":  "node scripts/dynamic-state-replay.mjs",
                     "state-live":  "node scripts/dynamic-state-live.mjs",
                     "service":  "node scripts/tianshu-service.mjs",
-                    "health":  "node scripts/health-check.mjs"
+                    "health":  "node scripts/health-check.mjs",
+                    "obsidian-read-model":  "node scripts/build-obsidian-read-model.mjs",
+                    "cockpit-preview":  "node scripts/cockpit-preview.mjs",
+                    "classify-legacy-contexts":  "node scripts/classify-legacy-record-contexts.mjs"
                 }
 }

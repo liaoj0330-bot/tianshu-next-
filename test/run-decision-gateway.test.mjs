@@ -17,6 +17,6 @@ test("independently verified run appears for creator decision and only creator a
     const today=await fetch(`${base}/v1/today`).then(r=>r.json()); const item=today.confirmations.find(x=>x.type==="run_decision");
     assert.equal(item.confirmation_id,execution.runId); assert.equal(item.result.interaction.run_candidate.verification_passed,true); assert.equal(item.result.interaction.run_candidate.report.reviewer_report.checks[0].evidence,"exact bytes");
     const response=await fetch(`${base}/v1/runs/${execution.runId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({decision:"accept",reason:"creator checked evidence",decided_by:"creator"})}); assert.equal(response.status,200);
-    assert.equal(db.prepare("SELECT status FROM goals WHERE goal_id=?").get(prepared.goalId).status,"completed"); assert.equal(db.prepare("SELECT decided_by FROM decisions WHERE run_id=?").get(execution.runId).decided_by,"creator");
+    assert.equal(db.prepare("SELECT status FROM goals WHERE goal_id=?").get(prepared.goalId).status,"completed"); assert.equal(db.prepare("SELECT decided_by FROM decisions WHERE run_id=?").get(execution.runId).decided_by,"local_creator");
   } finally { await gateway.close(); db.close(); rmSync(root,{recursive:true,force:true}); }
 });

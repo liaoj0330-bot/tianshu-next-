@@ -1,4 +1,5 @@
 import { canonicalJson, newId, now } from "../core/store.mjs";
+import { assertAuthority } from "../governance/authority.mjs";
 
 export function recordMemoryCandidate(db, { subject_id, statement, scope = "project", source_id = null }) {
   if (!subject_id || !statement) throw new Error("memory candidate requires subject_id and statement");
@@ -20,11 +21,12 @@ export function addMemoryCounterexample(db, candidateId, counterexample) {
 }
 
 export function promoteMemoryCandidate(db, candidateId, promotedBy = "creator") {
+  const actor = assertAuthority(db, promotedBy, "experience.promote");
   const row = db.prepare("SELECT * FROM memory_candidates WHERE candidate_id=?").get(candidateId); if (!row) throw new Error("memory candidate not found");
   if (row.occurrence_count < 3) throw new Error("memory candidate requires three occurrences");
   if (JSON.parse(row.counterexamples_json).length) throw new Error("memory candidate has counterexamples");
   db.prepare("UPDATE memory_candidates SET status='promoted',updated_at=? WHERE candidate_id=?").run(now(), candidateId);
-  return { candidate_id: candidateId, statement: row.statement, scope: row.scope, promoted_by: promotedBy, status: "promoted" };
+  return { candidate_id: candidateId, statement: row.statement, scope: row.scope, promoted_by: actor, status: "promoted" };
 }
 
 export function listMemoryCandidates(db, subjectId) {

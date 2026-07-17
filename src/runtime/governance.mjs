@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { appendEvent, canonicalJson, newId, now } from "../core/store.mjs";
+import { assertAuthority } from "../governance/authority.mjs";
 
 const iso = (ms) => new Date(Date.now() + ms).toISOString();
 
@@ -36,11 +37,38 @@ export function startJob(db, jobId, leaseId) {
   return tx(db, () => { const job = db.prepare("SELECT * FROM jobs WHERE job_id=? AND lease_id=?").get(jobId, leaseId); if (!job || job.status !== "leased") throw new Error("job lease is not valid"); db.prepare("UPDATE jobs SET status='running',updated_at=? WHERE job_id=?").run(now(), jobId); appendEvent(db,"job",jobId,"job.started",{}); return jobId; });
 }
 
-export function requestCancel(db, jobId) {
+export function requestCancel(db, jobId, decidedBy = "creator") {
+  const actor = assertAuthority(db, decidedBy, "execution.approve");
   const job = db.prepare("SELECT * FROM jobs WHERE job_id=?").get(jobId); if (!job) throw new Error("unknown job");
   if (["succeeded", "failed", "cancelled"].includes(job.status)) throw new Error("cannot cancel a terminal job");
-  const status = ["queued", "retry_wait"].includes(job.status) ? "cancelled" : "cancel_requested";
-  db.prepare("UPDATE jobs SET status=?,updated_at=? WHERE job_id=?").run(status, now(), jobId); appendEvent(db,"job",jobId,`job.${status}`,{}); return status;
+  const status = ["queued", "retry_wait", "recovery_required"].includes(job.status) ? "cancelled" : "cancel_requested";
+  db.prepare("UPDATE jobs SET status=?,updated_at=? WHERE job_id=?").run(status, now(), jobId); appendEvent(db,"job",jobId,`job.${status}`,{ decided_by: actor }); return status;
+}
+
+export function retryJob(db, jobId, decidedBy = "creator") {
+  const actor = assertAuthority(db, decidedBy, "execution.approve");
+  const job = db.prepare("SELECT * FROM jobs WHERE job_id=?").get(jobId);
+  if (!job) throw new Error("unknown job");
+  if (!["failed", "recovery_required"].includes(job.status)) {
+    throw new Error("only failed or recovery-required jobs can be retried");
+  }
+  if (job.status === "failed" && job.attempts >= 3) throw new Error("job reached the hard attempt limit");
+  const maxAttempts = job.status === "failed"
+    ? Math.max(job.max_attempts, job.attempts + 1)
+    : job.max_attempts;
+  return tx(db, () => {
+    db.prepare(`
+      UPDATE jobs
+      SET status='queued',max_attempts=?,available_at=?,lease_id=NULL,updated_at=?
+      WHERE job_id=?
+    `).run(maxAttempts, now(), now(), jobId);
+    appendEvent(db, "job", jobId, "job.creator_retry_queued", {
+      decided_by: actor,
+      previous_status: job.status,
+      next_attempt: job.attempts + 1,
+    });
+    return db.prepare("SELECT * FROM jobs WHERE job_id=?").get(jobId);
+  });
 }
 
 export function finishJob(db, jobId, outcome, detail = {}) {
